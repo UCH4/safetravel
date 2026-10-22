@@ -1,0 +1,18 @@
+# Archivos de sesión de RStudio / R
+.Rhistory
+.RData
+.Rproj.user/
+.Rapp.history
+
+# Sistema operativo
+.DS_Store
+
+# Datos pesados que se regeneran (ver README.md, sección "Datos")
+data/raw/
+data/osrm/
+data/otp/
+*.pbf
+*.osrm*
+
+# Credenciales: nunca en el repositorio (van en ~/.Renviron)
+.Renviron
