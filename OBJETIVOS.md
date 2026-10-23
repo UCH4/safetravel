@@ -147,7 +147,7 @@ Ver la especificación completa de la API en `https://datosabiertos-apis.buenosa
 - [ ] Corregir la definición de A, B y C en el párrafo de diseño de la Introducción (22).
 - [ ] Corregir `materiales_y_metodos.md`: grilla de 500 m, sin ponderación por día, set de C, prueba estadística (23).
 - [ ] Decidir el criterio de selección (min riesgo con tope de tiempo, o maximizar E) y alinear código y documento (16).
-- [ ] Mostrar en la app un aviso cuando se usa la grilla sintética o la direccion cae fuera de CABA (13, 17).
+- [ ] Mostrar en la app un aviso cuando se usa la grilla sintética o la dirección cae fuera de CABA (13, 17).
 
 ### 7.2 Ruteo y riesgo
 
