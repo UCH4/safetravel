@@ -133,3 +133,55 @@ Ver la especificación completa de la API en `https://datosabiertos-apis.buenosa
 - `RELEVAMIENTO_ESTADO.md`: comparación detallada entre código y documento.
 - `ANALISIS_INTRODUCCION_vs_IMPLEMENTACION.md` e `INVESTIGACION_DATOS_Y_MEJORAS.md`: análisis previos.
 - `materiales_y_metodos.md`: texto de la sección de métodos (desactualizado, ver punto 23).
+
+---
+
+## 7. Lista para terminar el prototipo y mejorarlo
+
+### 7.1 Imprescindible para la entrega
+
+- [ ] Rotar los tokens de Mapbox y LocationIQ expuestos en el chat (4.1).
+- [ ] Probar la app de punta a punta en el navegador: origen y destino por texto, por cruce, por coordenadas, por link de Google Maps y por clic en el mapa.
+- [ ] Volver a correr `R/02_simulacion_resultados.R` con la grilla real (18).
+- [ ] Cambiar la prueba t por Wilcoxon pareado y reportar también el efecto solo en los trayectos que cambiaron (19).
+- [ ] Corregir la definición de A, B y C en el párrafo de diseño de la Introducción (22).
+- [ ] Corregir `materiales_y_metodos.md`: grilla de 500 m, sin ponderación por día, set de C, prueba estadística (23).
+- [ ] Decidir el criterio de selección (min riesgo con tope de tiempo, o maximizar E) y alinear código y documento (16).
+- [ ] Mostrar en la app un aviso cuando se usa la grilla sintética o la direccion cae fuera de CABA (13, 17).
+
+### 7.2 Ruteo y riesgo
+
+- [ ] Reescribir `proponer_waypoints_desvio()` para que el desvío se oriente hacia celdas de menor riesgo (15).
+- [ ] Muestreo ponderado por población para los pares origen–destino (20).
+- [ ] Ampliar el set de C a 50 direcciones verificadas a mano (21). Recalcular C con el nuevo geocodificador.
+- [ ] Evaluar normalización por percentil del riesgo, porque la mediana es 0,08 (TODO.md).
+- [ ] Mejorar la desambiguación de cruces con más casos de prueba (desambiguación en `R/geocodificacion.R`).
+
+### 7.3 Transporte público
+
+- [ ] Levantar OTP 2.6.0 sobre `data/otp/graph` y probar un viaje de punta a punta (8–11).
+- [ ] Confirmar los parámetros de preferencia (`transferPenalty`, `walkReluctance`, `maxWalkDistance`) con esta versión.
+- [ ] Conectar `R/transporte.R` a la interfaz: opciones "más rápido", "menos trasbordos", "menos caminata", "trazados alternativos", y el punto de espera con la frecuencia de `data/transporte.sqlite`.
+- [ ] Mostrar cada tramo con su etiqueta de vigencia ("programado, fecha X").
+- [ ] Calcular la exposición al riesgo de cada itinerario con `calcular_riesgo_ruta()` y permitir elegir la opción de menor riesgo.
+- [ ] Resolver la falta de fecha común: colectivos (sep–dic 2019) y trenes (feb–abr 2020) no se pueden planificar juntos hoy (4).
+- [ ] Conseguir GTFS vigentes de colectivos y subte: pedir a `apitransporte@buenosaires.gob.ar` y a la Ciudad (3).
+- [ ] Obtener credenciales de la API de Transporte (correo que no llegó, 4.1) y probar `subtes/forecastGTFS` (6).
+- [ ] Decidir si se incluyen cortes de calles y EcoBici en el mapa (endpoints con 401 ya confirmados).
+
+### 7.4 Código y calidad
+
+- [ ] Agregar `httr`, `jsonlite`, `DBI`, `RSQLite` y `data.table` a `paquetes_requeridos`; quitar `purrr` si no se usa (26).
+- [ ] Eliminar `incProgress <- NULL` (27).
+- [ ] Reemplazar la rama de Google (Directions legacy) por Routes API o quitarla (25).
+- [ ] Mostrar el error real en consola en lugar de caer en la grilla sintética en silencio (17).
+- [ ] Pruebas automáticas con `testthat` para `calcular_eficacia`, `calcular_tiempo_respuesta`, `peso_franja`, `decodificar_polilinea`, `normalizar_texto` y `generar_consultas`.
+- [ ] Documentar en el README cómo reproducir el contenedor OSRM peatonal (ver nota en README).
+- [ ] Liberar espacio en disco: `data/osrm/` y `data/otp/` ocupan unos 5 GB (12).
+
+### 7.5 Documentación
+
+- [ ] Actualizar `GUIA_BETA.md` con transporte, Docker y las nuevas formas de entrada de direcciones.
+- [ ] Actualizar `TODO.md` y `RELEVAMIENTO_ESTADO.md` con el estado de este documento.
+- [ ] Revisar las referencias del documento (el informe 2025 del Mapa del Delito no fue verificado).
+- [ ] Corregir fechas y encabezados del documento (la entrega figura como 03/09/26, ya vencida).
