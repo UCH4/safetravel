@@ -1,173 +1,193 @@
 # ============================================================
 # 03_base_transporte.R
-# Construye la base de datos local de transporte público
-# (data/transporte.sqlite) a partir de los GTFS estáticos
-# descargados de datos abiertos.
+# ETL del GTFS de colectivos de CABA/AMBA y construcción de la
+# base de topología data/transporte.sqlite, con sesgo de riesgo.
 #
-# Fuentes (ver data/otp/graph/):
-#   - colectivos-gtfs.zip  BA Data (CABA), calendario 2019-09 a 2019-12
-#   - subte-gtfs.zip       SBASE (CABA), calendario 2014 a 2021
-#   - trenes-gtfs.zip      Trenes Argentinos (BA Data), vigencia 2020-02 a 2020-04
+# Pasos:
+#   1. Carga del GTFS (data.table). Se descarta shapes.txt. De
+#      stop_times.txt solo se usan 5 columnas y se filtran los viajes
+#      del día de referencia (los demás se descartan en memoria).
+#   2. Segmentos parada -> parada por viaje (tiempo de viaje real
+#      programado entre paradas consecutivas).
+#   3. Frecuencia por línea/parada en bloques horarios:
+#      Mañana 06-12, Tarde 12-20, Noche 20-06 (espera media = minutos
+#      del bloque / salidas del bloque).
+#   4. Spatial join de cada parada con la grilla de riesgo
+#      (data/grilla_riesgo.rds) -> score_riesgo (0-1).
+#   5. Escritura de data/transporte.sqlite con SOLO tres tablas:
+#      paradas_riesgo, lineas_recorridos, conectividad (con índices).
 #
-# Cada fuente conserva su fecha de vigencia. Nada se presenta
-# como "tiempo real": son horarios programados.
+# Entrada: data/gtfs/colectivos-gtfs-2019-10-01.zip
+#   (GTFS de colectivos filtrado al día de referencia; ver README.md).
 #
 # Ejecutar con: Rscript R/03_base_transporte.R
 # ============================================================
 
 source(if (file.exists("00_config.R")) "00_config.R" else "R/00_config.R")
 
-RUTA_GTFS <- file.path(RUTA_DATOS, "otp", "graph")
-RUTA_DB_TRANSPORTE <- file.path(RUTA_DATOS, "transporte.sqlite")
+suppressPackageStartupMessages({
+  library(data.table)
+  library(sf)
+})
 
-# Fecha de referencia por modo: un día hábil dentro del calendario de cada feed.
-# Colectivos y subte: 1-oct-2019. Trenes: 5-feb-2020 (su feed es de 2020).
-# No existe una fecha común a los tres feeds.
-FECHA_REFERENCIA <- c(colectivos = as.Date("2019-10-01"),
-                      subte = as.Date("2019-10-01"),
-                      trenes = as.Date("2020-02-05"))
+RUTA_GTFS_COLECTIVOS <- file.path(RUTA_DATOS, "gtfs", "colectivos-gtfs-2019-10-01.zip")
+RUTA_DB_TRANSPORTE   <- file.path(RUTA_DATOS, "transporte.sqlite")
+FECHA_REFERENCIA_COL <- as.Date("2019-10-01")
 
-# Ventanas de hora pico para estimar frecuencia (minutos entre servicios)
-PICO_MANIANA <- c(7 * 60, 10 * 60)
-PICO_TARDE   <- c(17 * 60, 20 * 60)
+# Bloques horarios: nombre, desde (min. desde medianoche), hasta, duración en minutos.
+# La franja Noche cruza medianoche: 20:00 a 06:00 (se trata con % 1440).
+FRANJAS <- data.table(
+  franja = c("Manana", "Tarde", "Noche"),
+  desde  = c(6 * 60, 12 * 60, 20 * 60),
+  hasta  = c(12 * 60, 20 * 60, 30 * 60),   # 30 * 60 = 06:00 del día siguiente
+  minutos = c(6 * 60, 8 * 60, 10 * 60)
+)
 
-#' Lee un archivo de un GTFS (ZIP) sin descomprimirlo en disco.
-leer_gtfs <- function(zip, archivo, select = NULL) {
-  ruta <- file.path(RUTA_GTFS, zip)
-  data.table::fread(cmd = paste("unzip -p", shQuote(ruta), archivo),
-                    select = select, showProgress = FALSE, encoding = "UTF-8")
+#' Convierte horas GTFS "HH:MM:SS" (pueden superar 24:00) a minutos desde medianoche.
+#' Vectorizado: es el paso más costoso con 9–31 millones de filas.
+hora_a_minutos <- function(x) {
+  h <- as.integer(sub(":.*$", "", x))
+  m <- as.integer(sub("^[0-9]+:([0-9]+):.*$", "\\1", x))
+  s <- as.integer(sub("^.*:", "", x))
+  h * 60 + m + s / 60
 }
 
-#' Convierte "HH:MM:SS" (puede superar 24:00) a minutos desde medianoche.
-hora_a_minutos <- function(hora) {
-  p <- strsplit(hora, ":", fixed = TRUE)
-  vapply(p, function(x) as.numeric(x[1]) * 60 + as.numeric(x[2]) + as.numeric(x[3]) / 60, numeric(1))
+#' Asigna la franja horaria a minutos desde medianoche (0–1800, para viajes que cruzan la noche).
+franja_de <- function(minutos) {
+  t <- minutos %% 1440
+  t <- ifelse(t < 360, t + 1440, t)   # 00:00-05:59 pertenecen a la Noche del día anterior
+  out <- rep(NA_character_, length(t))
+  for (i in seq_len(nrow(FRANJAS))) {
+    out[t >= FRANJAS$desde[i] & t < FRANJAS$hasta[i]] <- FRANJAS$franja[i]
+  }
+  out
 }
 
-#' Service_id activos en una fecha, según calendar.txt y calendar_dates.txt.
-servicios_activos <- function(zip, fecha) {
-  dias <- c("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
-  dia <- dias[as.POSIXlt(fecha)$wday + 1]
-  f <- format(fecha, "%Y%m%d")
-  activos <- character(0)
-
-  cal <- tryCatch(leer_gtfs(zip, "calendar.txt"), error = function(e) NULL)
-  if (!is.null(cal) && nrow(cal) > 0) {
-    cal$service_id <- as.character(cal$service_id)
-    ok <- cal[[dia]] == 1 & cal$start_date <= as.numeric(f) & cal$end_date >= as.numeric(f)
-    activos <- cal$service_id[ok]
-  }
-  cd <- tryCatch(leer_gtfs(zip, "calendar_dates.txt"), error = function(e) NULL)
-  if (!is.null(cd) && nrow(cd) > 0) {
-    cd$service_id <- as.character(cd$service_id)
-    en_fecha <- cd[cd$date == as.numeric(f), ]
-    activos <- union(setdiff(activos, en_fecha$service_id[en_fecha$exception_type == 2]),
-                     en_fecha$service_id[en_fecha$exception_type == 1])
-  }
-  activos
+#' Lee una tabla de un GTFS (ZIP) sin descomprimir a disco.
+leer_gtfs_tabla <- function(zip, archivo, select = NULL, colClasses = NULL) {
+  fread(cmd = paste("unzip -p", shQuote(zip), archivo), select = select,
+        colClasses = colClasses, showProgress = FALSE, encoding = "UTF-8")
 }
 
-#' Lee los datos básicos de una fuente GTFS y los devuelve como listas de tablas.
-leer_feed <- function(modo, zip) {
-  feed_info <- tryCatch(leer_gtfs(zip, "feed_info.txt"), error = function(e) NULL)
-  cd <- tryCatch(leer_gtfs(zip, "calendar_dates.txt"), error = function(e) NULL)
-  vigencia <- if (!is.null(feed_info) && all(c("feed_start_date", "feed_end_date") %in% names(feed_info))) {
-    paste(feed_info$feed_start_date[1], feed_info$feed_end_date[1])
-  } else if (!is.null(cd) && nrow(cd) > 0) {
-    paste(min(cd$date), max(cd$date))
-  } else {
-    NA_character_
-  }
-  paradas <- leer_gtfs(zip, "stops.txt", select = c("stop_id", "stop_name", "stop_lat", "stop_lon"))
-  rutas   <- leer_gtfs(zip, "routes.txt")
-  viajes  <- leer_gtfs(zip, "trips.txt")
+#' Servicios (service_id) activos en la fecha de referencia, según calendar_dates.
+servicios_en_fecha <- function(zip, fecha) {
+  cd <- leer_gtfs_tabla(zip, "calendar_dates.txt", colClasses = c(service_id = "character"))
+  f <- as.integer(format(fecha, "%Y%m%d"))
+  cd[date == f & exception_type == 1, unique(service_id)]
+}
 
-  list(
-    feed = data.frame(modo = modo, archivo = zip, vigencia = vigencia, stringsAsFactors = FALSE),
-    paradas = data.frame(modo = modo, stop_id = as.character(paradas$stop_id),
-                         nombre = paradas$stop_name, lat = paradas$stop_lat, lon = paradas$stop_lon,
-                         stringsAsFactors = FALSE),
-    lineas = data.frame(modo = modo, route_id = as.character(rutas$route_id),
-                        nombre_corto = if ("route_short_name" %in% names(rutas)) rutas$route_short_name else NA,
-                        nombre_largo = if ("route_long_name" %in% names(rutas)) rutas$route_long_name else NA,
-                        stringsAsFactors = FALSE),
-    viajes = data.frame(modo = modo, trip_id = as.character(viajes$trip_id),
-                        route_id = as.character(viajes$route_id),
-                        service_id = as.character(viajes$service_id),
-                        sentido = if ("trip_headsign" %in% names(viajes)) viajes$trip_headsign else NA_character_, stringsAsFactors = FALSE)
+#' ETL del GTFS de colectivos: devuelve las tres tablas ya optimizadas (sin escribir).
+etl_colectivos <- function(zip = RUTA_GTFS_COLECTIVOS, fecha = FECHA_REFERENCIA_COL,
+                           grilla = readRDS(file.path(RUTA_DATOS, "grilla_riesgo.rds"))) {
+  message("1/5 Servicios activos el ", fecha, "...")
+  servicios <- servicios_en_fecha(zip, fecha)
+  if (length(servicios) == 0) stop("Ningún servicio activo en la fecha ", fecha)
+
+  message("2/5 Viajes y stop_times del día (sin shapes.txt)...")
+  viajes_hdr <- names(leer_gtfs_tabla(zip, "trips.txt")[0])
+  cols_viajes <- intersect(c("route_id", "service_id", "trip_id", "trip_headsign"), viajes_hdr)
+  viajes <- leer_gtfs_tabla(zip, "trips.txt", select = cols_viajes,
+                            colClasses = c(route_id = "character", service_id = "character",
+                                           trip_id = "character"))
+  viajes <- viajes[service_id %in% servicios]
+  if (!"trip_headsign" %in% names(viajes)) viajes[, trip_headsign := NA_character_]
+
+  st <- leer_gtfs_tabla(zip, "stop_times.txt",
+                        select = c("trip_id", "stop_id", "stop_sequence", "arrival_time", "departure_time"),
+                        colClasses = c(trip_id = "character", stop_id = "character"))
+  st <- st[trip_id %in% viajes$trip_id]
+  setorder(st, trip_id, stop_sequence)
+  st[, min_arr := hora_a_minutos(arrival_time)]
+  st[, min_dep := hora_a_minutos(departure_time)]
+  st[, c("arrival_time", "departure_time") := NULL]
+
+  message("3/5 Segmentos parada -> parada y frecuencias por franja...")
+  st[, `:=`(stop_sig = shift(stop_id, type = "lead"), arr_sig = shift(min_arr, type = "lead")),
+     by = trip_id]
+  seg <- st[!is.na(stop_sig), .(trip_id, from = stop_id, to = stop_sig,
+                                dep = min_dep, t = arr_sig - min_dep)]
+  rm(st); gc(verbose = FALSE)
+  # Descarta tramos imposibles entre paradas consecutivas (errores del origen): menos de 0 o más de 30 min.
+  seg <- seg[t > 0 & t <= 30]
+  seg <- merge(seg, viajes[, .(trip_id, route_id, trip_headsign)], by = "trip_id")
+  seg[, franja := franja_de(dep)]
+  seg <- seg[!is.na(franja)]
+
+  # Tiempo de viaje por tramo: mediana de los viajes del día
+  tramos <- seg[, .(tiempo_min = median(t), salidas = .N), by = .(route_id, from, to)]
+
+  # Salidas por línea/parada/franja -> espera media = minutos de la franja / salidas
+  salidas_franja <- seg[, .N, by = .(route_id, from, franja)]
+  espera <- dcast(salidas_franja, route_id + from ~ franja, value.var = "N", fill = 0)
+  for (i in seq_len(nrow(FRANJAS))) {
+    f <- FRANJAS$franja[i]
+    col_salidas <- espera[[f]]
+    nombre <- paste0("espera_", tolower(f), "_min")
+    espera[, (nombre) := ifelse(col_salidas > 0, FRANJAS$minutos[i] / col_salidas, NA_real_)]
+  }
+  espera <- espera[, c("route_id", "from", grep("^espera_", names(espera), value = TRUE)), with = FALSE]
+  conectividad <- merge(tramos, espera, by = c("route_id", "from"), all.x = TRUE)
+  conectividad[, `:=`(from = as.character(from), to = as.character(to), route_id = as.character(route_id))]
+  setnames(conectividad, c("from", "to", "route_id", "tiempo_min"),
+           c("id_parada_origen", "id_parada_destino", "id_ruta", "tiempo_estimado_entre_paradas"))
+  conectividad[, salidas := NULL]
+
+  message("4/5 Paradas, líneas y spatial join con la grilla de riesgo...")
+  paradas_gtfs <- leer_gtfs_tabla(zip, "stops.txt",
+                                  select = c("stop_id", "stop_name", "stop_lat", "stop_lon"),
+                                  colClasses = c(stop_id = "character"))
+  usadas <- unique(c(conectividad$id_parada_origen, conectividad$id_parada_destino))
+  paradas_gtfs <- paradas_gtfs[stop_id %in% usadas]
+  pts <- st_as_sf(paradas_gtfs, coords = c("stop_lon", "stop_lat"), crs = CRS_GEOGRAFICO, remove = FALSE)
+  pts <- st_transform(pts, st_crs(grilla))
+  cruce <- st_join(pts, grilla[, "riesgo"], join = st_intersects, left = TRUE)
+  cruce <- cruce[!duplicated(cruce$stop_id), ]
+  paradas_riesgo <- data.table(
+    id_parada = cruce$stop_id,
+    nombre = cruce$stop_name,
+    lat = cruce$stop_lat,
+    lng = cruce$stop_lon,
+    score_riesgo = cruce$riesgo   # NA si la parada está fuera de la grilla (fuera de CABA)
   )
+
+  routes <- leer_gtfs_tabla(zip, "routes.txt",
+                            select = c("route_id", "route_short_name", "route_long_name"),
+                            colClasses = c(route_id = "character"))
+  routes <- routes[route_id %in% conectividad$id_ruta]
+  ramal <- viajes[, .N, by = .(route_id, trip_headsign)][order(-N), .SD[1], by = route_id]
+  lineas_recorridos <- merge(routes, ramal[, .(route_id, ramal = trip_headsign)], by = "route_id", all.x = TRUE)
+  lineas_recorridos <- lineas_recorridos[, .(
+    id_ruta = route_id,
+    nombre_linea = route_short_name,
+    ramal = fifelse(is.na(ramal) | ramal == "", route_long_name, ramal)
+  )]
+
+  message("5/5 Listo: ", nrow(paradas_riesgo), " paradas, ", nrow(lineas_recorridos),
+          " líneas, ", nrow(conectividad), " tramos.")
+  list(paradas_riesgo = paradas_riesgo, lineas_recorridos = lineas_recorridos,
+       conectividad = conectividad)
 }
 
-#' Frecuencia por parada y línea para el día de referencia.
-#' Para cada línea y parada: viajes del día y minutos promedio entre servicios en hora pico.
-calcular_frecuencias <- function(modo, zip, servicios) {
-  st <- leer_gtfs(zip, "stop_times.txt",
-                  select = c("trip_id", "stop_id", "stop_sequence", "departure_time"))
-  viajes <- leer_gtfs(zip, "trips.txt", select = c("route_id", "service_id", "trip_id"))
-  viajes$trip_id <- as.character(viajes$trip_id)
-  viajes <- viajes[as.character(viajes$service_id) %in% servicios, ]
-  st$trip_id <- as.character(st$trip_id)
-  st <- st[st$trip_id %in% viajes$trip_id, ]
-  st <- merge(st, viajes[, c("trip_id", "route_id")], by = "trip_id")
-  st$min <- hora_a_minutos(st$departure_time)
-
-  en_pico <- (st$min >= PICO_MANIANA[1] & st$min < PICO_MANIANA[2]) |
-             (st$min >= PICO_TARDE[1] & st$min < PICO_TARDE[2])
-  agg <- data.frame(
-    modo = modo,
-    route_id = as.character(st$route_id),
-    stop_id = as.character(st$stop_id),
-    trip_id = st$trip_id,
-    en_pico = en_pico,
-    stringsAsFactors = FALSE
-  )
-  # Un viaje cuenta una sola vez por parada
-  agg <- agg[!duplicated(agg[, c("trip_id", "stop_id")]), ]
-  res <- do.call(rbind, lapply(split(agg, list(agg$route_id, agg$stop_id), drop = TRUE), function(d) {
-    pico <- sum(d$en_pico)
-    data.frame(modo = modo, route_id = d$route_id[1], stop_id = d$stop_id[1],
-               viajes_dia = nrow(d), viajes_pico = pico,
-               espera_pico_min = if (pico > 0) round((PICO_MANIANA[2] - PICO_MANIANA[1] +
-                                                       PICO_TARDE[2] - PICO_TARDE[1]) / pico, 1) else NA_real_,
-               stringsAsFactors = FALSE)
-  }))
-  res
-}
-
-#' Construye data/transporte.sqlite con todas las fuentes.
-construir_base_transporte <- function(ruta_db = RUTA_DB_TRANSPORTE) {
+#' Escribe data/transporte.sqlite con SOLO las tres tablas y sus índices.
+escribir_base_transporte <- function(tablas, ruta_db = RUTA_DB_TRANSPORTE) {
   if (!requireNamespace("RSQLite", quietly = TRUE)) stop("Falta el paquete RSQLite.")
-  fuentes <- c(colectivos = "colectivos-gtfs.zip", subte = "subte-gtfs.zip", trenes = "trenes-gtfs.zip")
-
+  if (file.exists(ruta_db)) file.remove(ruta_db)
   con <- DBI::dbConnect(RSQLite::SQLite(), ruta_db)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
-  for (t in c("feeds", "paradas", "lineas", "viajes", "frecuencias")) {
-    if (DBI::dbExistsTable(con, t)) DBI::dbRemoveTable(con, t)
-  }
-
-  feeds <- list(); paradas <- list(); lineas <- list(); viajes <- list(); frec <- list()
-  for (modo in names(fuentes)) {
-    message("Leyendo ", modo, " (", fuentes[[modo]], ")...")
-    f <- leer_feed(modo, fuentes[[modo]])
-    fecha <- FECHA_REFERENCIA[[modo]]
-    servicios <- servicios_activos(fuentes[[modo]], fecha)
-    f$feed$servicios_referencia <- length(servicios)
-    f$feed$fecha_referencia <- as.character(fecha)
-    feeds[[modo]] <- f$feed; paradas[[modo]] <- f$paradas; lineas[[modo]] <- f$lineas; viajes[[modo]] <- f$viajes
-    if (length(servicios) > 0) {
-      frec[[modo]] <- calcular_frecuencias(modo, fuentes[[modo]], servicios)
-    }
-  }
-
-  DBI::dbWriteTable(con, "feeds", do.call(rbind, feeds))
-  DBI::dbWriteTable(con, "paradas", do.call(rbind, paradas))
-  DBI::dbWriteTable(con, "lineas", do.call(rbind, lineas))
-  DBI::dbWriteTable(con, "viajes", do.call(rbind, viajes))
-  DBI::dbWriteTable(con, "frecuencias", do.call(rbind, frec))
-  DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_frec_parada ON frecuencias(stop_id)")
-  DBI::dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_paradas_nombre ON paradas(nombre)")
-  message("Base creada en ", ruta_db)
+  DBI::dbWriteTable(con, "paradas_riesgo", as.data.frame(tablas$paradas_riesgo))
+  DBI::dbWriteTable(con, "lineas_recorridos", as.data.frame(tablas$lineas_recorridos))
+  DBI::dbWriteTable(con, "conectividad", as.data.frame(tablas$conectividad))
+  DBI::dbExecute(con, "CREATE UNIQUE INDEX idx_paradas_id ON paradas_riesgo(id_parada)")
+  DBI::dbExecute(con, "CREATE INDEX idx_paradas_geo ON paradas_riesgo(lat, lng)")
+  DBI::dbExecute(con, "CREATE UNIQUE INDEX idx_lineas_id ON lineas_recorridos(id_ruta)")
+  DBI::dbExecute(con, "CREATE INDEX idx_con_origen ON conectividad(id_parada_origen)")
+  DBI::dbExecute(con, "CREATE INDEX idx_con_destino ON conectividad(id_parada_destino)")
+  DBI::dbExecute(con, "CREATE INDEX idx_con_ruta ON conectividad(id_ruta)")
+  message("Base escrita en ", ruta_db, " (", round(file.size(ruta_db) / 1e6, 1), " MB).")
   invisible(ruta_db)
 }
 
-if (sys.nframe() == 0) construir_base_transporte()
+if (sys.nframe() == 0) {
+  tablas <- etl_colectivos()
+  escribir_base_transporte(tablas)
+}

@@ -8,13 +8,11 @@
 # Todos los horarios son PROGRAMADOS (GTFS), no en tiempo real.
 # ============================================================
 
+suppressPackageStartupMessages(library(data.table))
+
 OTP_BASE <- "http://localhost:8080/otp/routers/default"
 TZ_CABA <- "America/Argentina/Buenos_Aires"
-RUTA_DB_TRANSPORTE_APP <- if (file.exists(file.path(RUTA_DATOS, "transporte.sqlite"))) {
-  file.path(RUTA_DATOS, "transporte.sqlite")
-} else {
-  NA_character_
-}
+RUTA_DB_TRANSPORTE <- file.path(RUTA_DATOS, "transporte.sqlite")
 
 #' Indica si el servidor OTP local responde.
 servidor_otp_disponible <- function() {
@@ -66,15 +64,269 @@ nombre_modo <- function(modo) {
     TRAM = "Tranvía", FERRY = "Ferry")[modo] %||% modo
 }
 
-#' Consulta espera/frecuencia programada de una línea en una parada (desde la base).
-#' @return data.frame con viajes_pico y espera_pico_min, o NULL si no hay datos.
-consultar_espera <- function(modo_gtfs, route_id, stop_id) {
-  if (is.na(RUTA_DB_TRANSPORTE_APP) || !requireNamespace("RSQLite", quietly = TRUE)) return(NULL)
-  con <- DBI::dbConnect(RSQLite::SQLite(), RUTA_DB_TRANSPORTE_APP)
+#' Espera media programada (min) de una línea en una parada, para una franja horaria.
+#' Lee la tabla `conectividad` de data/transporte.sqlite.
+#' @return numeric (NA si la línea no pasa por esa parada en esa franja)
+consultar_espera <- function(ruta, parada, franja = "Manana") {
+  topo <- cargar_topologia()
+  col <- paste0("espera_", tolower(franja), "_min")
+  fila <- topo$conectividad[id_ruta == ruta & id_parada_origen == parada][1]
+  if (nrow(fila) == 0) return(NA_real_)
+  fila[[col]]
+}
+
+# ============================================================
+# Topología de colectivos con sesgo de riesgo
+# ============================================================
+# Modelo: grafo de estados (línea, parada). Un viaje en colectivo es:
+#   parada --subida--> (línea, parada) --viaje--> (línea, parada siguiente) ... --bajada--> parada
+# La espera y la penalización por transbordo se cargan SOLO al subir, así que cada
+# subida (y cada transbordo) se cuenta una vez.
+#
+# Costo de cada arista (Dijkstra):
+#   w = (tiempo_base + espera_franja / 2 [solo subida]) * (1 + factor_sesgo * score)
+# score = promedio de score_riesgo de las paradas que une la arista (0 si no hay dato).
+# factor_sesgo = 0 da la ruta más rápida; valores altos la desvían de zonas de riesgo.
+
+# Supuestos (ver README, sección "Supuestos del ruteo")
+VELOCIDAD_CAMINATA_M_MIN <- 80        # ~4,8 km/h
+PENALIZACION_SUBIDA_MIN <- 3          # costo fijo por cada subida (transbordo incluido)
+DISTANCIA_TRANSBORDO_M <- 150         # caminata máxima entre dos paradas para transbordar
+RADIO_ACCESO_M <- 500                 # caminata máxima hasta la primera/última parada
+VALOR_SIN_SERVICIO_MIN <- 1e6         # tramo sin servicio en la franja: peso enorme
+
+# Caché en memoria: la base se lee y el grafo se arma una sola vez por sesión.
+.cache_transporte <- new.env(parent = emptyenv())
+
+#' Lee las tres tablas de la base de topología (con caché).
+cargar_topologia <- function(ruta_db = RUTA_DB_TRANSPORTE) {
+  if (!is.null(.cache_transporte$topo)) return(.cache_transporte$topo)
+  if (!requireNamespace("RSQLite", quietly = TRUE)) stop("Falta el paquete RSQLite.")
+  if (!file.exists(ruta_db)) stop("No existe ", ruta_db, ". Correr R/03_base_transporte.R.")
+  con <- DBI::dbConnect(RSQLite::SQLite(), ruta_db)
   on.exit(DBI::dbDisconnect(con), add = TRUE)
-  DBI::dbGetQuery(con, "SELECT viajes_pico, espera_pico_min FROM frecuencias
-                        WHERE modo = ? AND route_id = ? AND stop_id = ? LIMIT 1",
-                  params = list(modo_gtfs, route_id, stop_id))
+  topo <- list(
+    paradas = as.data.table(DBI::dbReadTable(con, "paradas_riesgo")),
+    lineas = as.data.table(DBI::dbReadTable(con, "lineas_recorridos")),
+    conectividad = as.data.table(DBI::dbReadTable(con, "conectividad"))
+  )
+  .cache_transporte$topo <- topo
+  topo
+}
+
+#' Distancia en metros entre un punto y muchos (Haversine, vectorizada).
+distancias_m <- function(lat, lon, lats, lons) {
+  r <- 6371000
+  p1 <- lat * pi / 180; p2 <- lats * pi / 180
+  dp <- (lats - lat) * pi / 180; dl <- (lons - lon) * pi / 180
+  a <- sin(dp / 2)^2 + cos(p1) * cos(p2) * sin(dl / 2)^2
+  2 * r * asin(pmin(1, sqrt(a)))
+}
+
+#' Franja horaria según la hora (por defecto, la actual).
+franja_actual <- function(hora = format(Sys.time(), "%H")) {
+  h <- as.integer(hora)
+  if (h >= 6 && h < 12) "Manana" else if (h >= 12 && h < 20) "Tarde" else "Noche"
+}
+
+#' Construye el grafo de estados (igraph). Vértices "P:<parada>" y "L:<línea>|<parada>".
+#' Se arma una sola vez por sesión (ver `obtener_grafo_colectivos()`).
+construir_grafo_colectivos <- function(topo = cargar_topologia(),
+                                       distancia_transbordo = DISTANCIA_TRANSBORDO_M) {
+  if (!requireNamespace("igraph", quietly = TRUE)) stop("Falta el paquete igraph.")
+  paradas <- topo$paradas
+  con <- topo$conectividad
+  score_p <- setNames(ifelse(is.na(paradas$score_riesgo), 0, paradas$score_riesgo), paradas$id_parada)
+
+  # Estados (línea, parada): origen y destino de cada tramo
+  est_origen <- con[, .(id_ruta, id_parada = id_parada_origen,
+                        espera_manana_min, espera_tarde_min, espera_noche_min)]
+  est_origen <- est_origen[!duplicated(est_origen[, .(id_ruta, id_parada)])]
+  est_destino <- con[, .(id_ruta, id_parada = id_parada_destino)]
+  est_destino <- est_destino[!duplicated(est_destino)]
+  est <- merge(est_destino, est_origen, by = c("id_ruta", "id_parada"), all.x = TRUE)
+  est[, nodo := paste0("L:", id_ruta, "|", id_parada)]
+  est[, p_nodo := paste0("P:", id_parada)]
+
+  # Subida: parada -> estado. Solo en paradas donde la línea tiene servicio (con espera conocida)
+  subida <- est[!is.na(espera_manana_min), .(
+    from = p_nodo, to = nodo, tipo = "subida", id_ruta, id_parada,
+    tiempo = PENALIZACION_SUBIDA_MIN, espera_manana = espera_manana_min,
+    espera_tarde = espera_tarde_min, espera_noche = espera_noche_min
+  )]
+  # Bajada: estado -> parada (sin costo)
+  bajada <- est[, .(from = nodo, to = p_nodo, tipo = "bajada", id_ruta, id_parada,
+                    tiempo = 0, espera_manana = NA_real_, espera_tarde = NA_real_, espera_noche = NA_real_)]
+  # Viaje: estado (línea, origen) -> estado (línea, destino)
+  viaje <- con[, .(from = paste0("L:", id_ruta, "|", id_parada_origen),
+                   to = paste0("L:", id_ruta, "|", id_parada_destino),
+                   tipo = "viaje", id_ruta, id_parada = id_parada_origen,
+                   tiempo = tiempo_estimado_entre_paradas,
+                   espera_manana = NA_real_, espera_tarde = NA_real_, espera_noche = NA_real_)]
+  # Transbordo a pie entre paradas cercanas (sin penalización extra: la subida ya la tiene)
+  pts <- sf::st_as_sf(paradas, coords = c("lng", "lat"), crs = CRS_GEOGRAFICO, remove = FALSE)
+  pts <- sf::st_transform(pts, CRS_PROYECTADO)
+  xy <- sf::st_coordinates(pts)
+  vecinos <- sf::st_is_within_distance(pts, pts, dist = distancia_transbordo)
+  pares <- data.table(i = rep(seq_along(vecinos), lengths(vecinos)), j = unlist(vecinos))
+  pares <- pares[i != j]
+  pares[, dist := sqrt((xy[i, 1] - xy[j, 1])^2 + (xy[i, 2] - xy[j, 2])^2)]
+  caminata <- pares[, .(from = paste0("P:", paradas$id_parada[i]), to = paste0("P:", paradas$id_parada[j]),
+                        tipo = "caminata", id_ruta = NA_character_, id_parada = paradas$id_parada[i],
+                        tiempo = dist / VELOCIDAD_CAMINATA_M_MIN,
+                        espera_manana = NA_real_, espera_tarde = NA_real_, espera_noche = NA_real_)]
+
+  aristas <- rbindlist(list(subida, viaje, bajada, caminata), use.names = TRUE)
+  # Score de la arista: promedio de las paradas que une (en el nodo "P:" o en la parada del estado)
+  parada_de <- function(nodo) sub("^(P:|L:[^|]*\\|)", "", nodo)
+  aristas[, score := (score_p[parada_de(from)] + score_p[parada_de(to)]) / 2]
+  aristas[is.na(score), score := 0]
+
+  vertices <- unique(c(aristas$from, aristas$to))
+  g <- igraph::graph_from_data_frame(
+    d = aristas[, .(from, to, tipo, id_ruta, id_parada, tiempo, espera_manana, espera_tarde, espera_noche, score)],
+    directed = TRUE,
+    vertices = data.frame(name = vertices, stringsAsFactors = FALSE)
+  )
+  g
+}
+
+#' Grafo cacheado (se construye la primera vez).
+obtener_grafo_colectivos <- function() {
+  if (is.null(.cache_transporte$grafo)) .cache_transporte$grafo <- construir_grafo_colectivos()
+  .cache_transporte$grafo
+}
+
+#' Pesos de cada arista para una franja y un factor de sesgo.
+#' Las aristas sin servicio en la franja (espera NA en subida) reciben VALOR_SIN_SERVICIO_MIN.
+pesos_aristas <- function(g, franja, factor_sesgo) {
+  tipo <- igraph::edge_attr(g, "tipo")
+  tiempo <- igraph::edge_attr(g, "tiempo")
+  esp <- igraph::edge_attr(g, paste0("espera_", tolower(franja)))
+  sc <- igraph::edge_attr(g, "score")
+  base <- tiempo + ifelse(tipo == "subida", esp / 2, 0)
+  base[is.na(base)] <- VALOR_SIN_SERVICIO_MIN
+  base * (1 + factor_sesgo * sc)
+}
+
+#' Ruta de colectivo con sesgo de riesgo entre dos puntos.
+#'
+#' Busca paradas a pie (<= RADIO_ACCESO_M) cerca de origen y destino, y calcula hasta
+#' `k_alternativas` caminos mínimos (Dijkstra) con costo ponderado por riesgo. Las alternativas
+#' se obtienen penalizando los tramos del camino anterior, para que sean distintas.
+#'
+#' @param origen_coords,destino_coords list(lat, lon)
+#' @param franja "Manana", "Tarde" o "Noche" (NULL = franja de la hora actual)
+#' @param factor_sesgo 0 = ruta más rápida; > 0 penaliza paradas y tramos de mayor riesgo
+#' @param k_alternativas máximo de rutas distintas a devolver
+#' @return lista de rutas; cada una con costo, duracion_min, espera_min, caminata_min,
+#'   transbordos, riesgo_medio, exposicion, tramos (data.frame) y paradas (vector)
+calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NULL,
+                                      factor_sesgo = 1, k_alternativas = 3) {
+  if (is.null(franja)) franja <- franja_actual()
+  g <- obtener_grafo_colectivos()
+  paradas <- cargar_topologia()$paradas
+
+  acceso <- function(pt) {
+    d <- distancias_m(pt$lat, pt$lon, paradas$lat, paradas$lng)
+    cerca <- which(d <= RADIO_ACCESO_M)
+    if (length(cerca) == 0) stop("No hay paradas de colectivo a menos de ", RADIO_ACCESO_M, " m del punto.")
+    data.table(id_parada = paradas$id_parada[cerca], caminata = d[cerca] / VELOCIDAD_CAMINATA_M_MIN,
+               score = ifelse(is.na(paradas$score_riesgo[cerca]), 0, paradas$score_riesgo[cerca]))
+  }
+  ac_o <- acceso(origen_coords)
+  ac_d <- acceso(destino_coords)
+
+  # Vértices virtuales ORIG y DEST, unidos a las paradas de acceso y de egreso a pie
+  g <- igraph::add_vertices(g, 2, name = c("ORIG", "DEST"))
+  nuevos <- rbind(
+    data.table(from = "ORIG", to = paste0("P:", ac_o$id_parada), caminata = ac_o$caminata, score = ac_o$score),
+    data.table(from = paste0("P:", ac_d$id_parada), to = "DEST", caminata = ac_d$caminata, score = ac_d$score)
+  )
+  g <- igraph::add_edges(g, as.vector(t(as.matrix(nuevos[, .(from, to)]))),
+                         attr = list(tipo = "acceso", id_ruta = NA_character_, id_parada = NA_character_,
+                                     tiempo = nuevos$caminata, espera_manana = NA_real_,
+                                     espera_tarde = NA_real_, espera_noche = NA_real_,
+                                     score = nuevos$score))
+
+  w_iter <- pesos_aristas(g, franja, factor_sesgo)
+  rutas <- list()
+  usados <- character(0)
+  for (k in seq_len(k_alternativas)) {
+    sp <- igraph::shortest_paths(g, from = "ORIG", to = "DEST", weights = w_iter,
+                                 output = "epath", algorithm = "dijkstra")
+    ep <- as.integer(sp$epath[[1]])
+    if (length(ep) == 0) break
+    firma <- paste(sort(ep), collapse = "-")
+    if (!(firma %in% usados)) {
+      usados <- c(usados, firma)
+      rutas <- c(rutas, list(resumir_ruta(g, ep, franja, factor_sesgo)))
+    }
+    w_iter[ep] <- w_iter[ep] * 2   # penaliza el camino hallado para buscar otro distinto
+  }
+  if (length(rutas) == 0) stop("No se encontró un recorrido en colectivo entre los puntos.")
+  rutas
+}
+
+#' Convierte un camino (secuencia de aristas) en un resumen legible.
+resumir_ruta <- function(g, ep, franja, factor_sesgo) {
+  tipo <- igraph::edge_attr(g, "tipo", ep)
+  id_ruta <- igraph::edge_attr(g, "id_ruta", ep)
+  tiempo <- igraph::edge_attr(g, "tiempo", ep)
+  esp <- igraph::edge_attr(g, paste0("espera_", tolower(franja)), ep)
+  sc <- igraph::edge_attr(g, "score", ep)
+  topo <- cargar_topologia()
+  nombres <- setNames(topo$paradas$nombre, topo$paradas$id_parada)
+  extremos <- igraph::ends(g, ep)
+  parada_de <- function(nodo) sub("^(P:|L:[^|]*\\|)", "", nodo)
+  parada_nombre <- function(nodo) {
+    id <- parada_de(nodo)
+    out <- unname(nombres[id])
+    ifelse(is.na(out), id, out)   # si el nombre no existe, se muestra el id
+  }
+
+  es_subida <- tipo == "subida"
+  boardings <- sum(es_subida)
+  espera_total <- sum(esp[es_subida] / 2, na.rm = TRUE)
+
+  # Tramos legibles: una subida + viajes de la misma línea + bajada = un tramo de colectivo
+  tramos <- list(); i <- 1
+  while (i <= length(ep)) {
+    if (tipo[i] == "subida") {
+      linea <- id_ruta[i]; desde <- parada_nombre(extremos[i, 1]); j <- i + 1; paradas_viaje <- 0; minutos <- tiempo[i]
+      while (j <= length(ep) && tipo[j] == "viaje" && id_ruta[j] == linea) {
+        paradas_viaje <- paradas_viaje + 1; minutos <- minutos + tiempo[j]; j <- j + 1
+      }
+      hasta <- parada_nombre(extremos[j - 1, 2])
+      tramos[[length(tramos) + 1]] <- data.frame(tipo = "colectivo", linea = linea, desde = desde, hasta = hasta,
+                                                 paradas = paradas_viaje, minutos = minutos,
+                                                 riesgo_medio = mean(sc[i:(j - 1)]), stringsAsFactors = FALSE)
+      i <- j
+    } else if (tipo[i] == "bajada") {
+      i <- i + 1   # la bajada no es un tramo: el colectivo ya termina en esa parada
+    } else {
+      tramos[[length(tramos) + 1]] <- data.frame(
+        tipo = ifelse(tipo[i] == "acceso", "a pie", ifelse(tipo[i] == "caminata", "transbordo a pie", tipo[i])),
+        linea = NA_character_, desde = parada_nombre(extremos[i, 1]), hasta = parada_nombre(extremos[i, 2]),
+        paradas = 0, minutos = tiempo[i], riesgo_medio = sc[i], stringsAsFactors = FALSE)
+      i <- i + 1
+    }
+  }
+  tramos <- do.call(rbind, tramos)
+  caminata <- sum(tiempo[tipo %in% c("acceso", "caminata")])
+  viaje_min <- sum(tiempo[tipo == "viaje"])
+  bus <- tipo %in% c("viaje", "subida")
+  list(
+    costo = sum(pesos_aristas(g, franja, factor_sesgo)[ep]),
+    duracion_min = viaje_min + espera_total + caminata,
+    espera_min = espera_total,
+    caminata_min = caminata,
+    transbordos = max(0L, boardings - 1L),
+    riesgo_medio = mean(sc[tipo %in% c("viaje", "subida")]),
+    exposicion = sum(tiempo[tipo == "viaje"] * sc[tipo == "viaje"]),
+    tramos = tramos,
+    paradas = unique(c(parada_nombre(extremos[1, 1]), parada_nombre(extremos[, 2])))
+  )
 }
 
 #' Pide itinerarios a OTP.

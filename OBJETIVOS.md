@@ -35,9 +35,11 @@ Este documento describe lo que el prototipo hace hoy, lo que no hace, y los erro
 | Formato de duración | ✅ | "1 h 12 min" en lugar de "72.4 min". Verificado con valores de prueba; falta verlo en la app. |
 | Variables A, B, C, E | ⚠️ | Calculadas, pero el criterio de selección y el desvío tienen problemas (sección 4). |
 | Simulación de 100 trayectos | ❌ | `data/resultados_simulacion.csv` es de la grilla sintética. Hay que volver a correrla. |
-| Base de datos de transporte | ⚠️ | `data/transporte.sqlite` (35 MB) con colectivos, subte y trenes. Datos vencidos (ver sección 4). |
-| Planificador de transporte (OTP) | ❌ | Grafo construido (`data/otp/graph/graph.obj`, 987 MB). El servidor no se levantó ni se probó. |
-| Integración de transporte en la app | ❌ | `R/transporte.R` está escrito pero no probado y no está conectado a la interfaz. |
+| Base de datos de transporte | ⚠️ | `data/transporte.sqlite` (18,8 MB), solo colectivos, tres tablas: `paradas_riesgo` (43.557), `lineas_recorridos` (1.047), `conectividad` (135.987 tramos). Horarios del 1-oct-2019 (vencidos). Verificada: sin huérfanos, sin tramos de más de 30 min. |
+| Ruteo sesgado en colectivos | ⚠️ | `calcular_colectivo_seguro()` en `R/transporte.R`, con Dijkstra sobre un grafo de estados (línea, parada). Funciona para CABA; probado en pares de puntos (ver abajo). No está conectado a la app. |
+| Evaluación del ruteo sesgado | ⚠️ | `R/04_evaluacion_transporte.R`. Resultados modestos (ver sección 8). |
+| Planificador multimodal (OTP) | ❌ | Grafo construido (`data/otp/graph/graph.obj`, 987 MB). El servidor no se levantó ni se probó. |
+| Integración de transporte en la app | ❌ | Ninguna de las dos rutas de transporte está conectada a la interfaz. |
 
 Leyenda: ✅ funciona y se probó · ⚠️ funciona con limitaciones o sin probar del todo · ❌ no funciona o no está hecho.
 
@@ -185,3 +187,34 @@ Ver la especificación completa de la API en `https://datosabiertos-apis.buenosa
 - [ ] Actualizar `TODO.md` y `RELEVAMIENTO_ESTADO.md` con el estado de este documento.
 - [ ] Revisar las referencias del documento (el informe 2025 del Mapa del Delito no fue verificado).
 - [ ] Corregir fechas y encabezados del documento (la entrega figura como 03/09/26, ya vencida).
+
+---
+
+## 8. Ruteo sesgado por riesgo en colectivos: evaluación
+
+Se corrió `R/04_evaluacion_transporte.R` sobre 50 pares de puntos dentro de CABA (centroides de la grilla separados entre 2 y 8 km), franja Tarde, con `factor_sesgo = 0` (ruta más rápida) y `factor_sesgo = 1` (ruta sesgada). De los 50 pares, 46 tuvieron recorrido en colectivo.
+
+| Métrica | Resultado |
+|---|---|
+| Pares con el mismo recorrido | 30 de 46 |
+| Pares con reducción de exposición ≥ 10 % | 9 de 46 |
+| Mediana de reducción de exposición | 0 % (IQR 0 a 0 %) |
+| Mediana de aumento de tiempo | 0 % (IQR 0 a 0,5 %) |
+| Wilcoxon pareado (exposición sesgada < rápida) | V = 141, p = 0,012 |
+| Transbordos medios (rápida / sesgada) | 0,59 / 0,61 |
+
+**Lectura.** El sesgo cambia el recorrido en 16 de 46 pares. Cuando lo cambia, reduce la exposición con un costo de tiempo bajo. El efecto es estadísticamente significativo en el conjunto (p = 0,012), pero es chico: la mediana es 0. Hay que decirlo así en el informe.
+
+**Por qué el efecto es chico.**
+- Solo 8.571 de 43.557 paradas están dentro de la grilla (CABA). Las demás tienen riesgo cero, así que el algoritmo no tiene por dónde desviarse.
+- Dentro de CABA, la grilla de 500 m es gruesa: muchas paradas de un mismo tramo caen en la misma celda.
+- La red de colectivos da pocas alternativas reales entre dos puntos. Muchas veces el recorrido más rápido ya es el menos riesgoso.
+
+## 9. Problemas nuevos y decisiones de diseño
+
+- **Tramos de más de 30 min entre paradas consecutivas** (212 en la primera versión, máximo 112 min): errores del origen. Se descartan en el ETL. La evaluación no cambió con este filtro.
+- **Transbordos a pie encadenados.** En algunos recorridos el algoritmo camina entre dos o tres paradas cercanas para subir a una línea que pasa por otra. Es correcto según el modelo, pero no es lo que haría una persona. Podría limitarse a un transbordo a pie por trayecto.
+- **Tiempo de consulta.** Construir el grafo tarda unos 20 s (181.600 estados, 610.972 aristas). Cada consulta tarda entre 4 y 5 s con 3 alternativas.
+- **Esperas por franja.** La espera de la franja Noche es grande (promedio 69 min en la base) porque hay pocos servicios. Es real en los datos de 2019, pero el valor no debería usarse para decidir sin verificarlo con horarios vigentes.
+- **Prueba sobre distancias chicas.** Los pares son de 2 a 8 km dentro de CABA. No se evaluó el comportamiento con origen o destino fuera de la grilla.
+- **Dos pendientes para la siguiente versión:** conectar `calcular_colectivo_seguro()` a la interfaz, y definir una métrica de exposición por tramo que no dependa solo de la grilla de 500 m (por ejemplo, la densidad de robos por paradas o por calle).

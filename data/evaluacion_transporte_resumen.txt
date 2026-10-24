@@ -1,0 +1,16 @@
+VERIFICACIÓN DE LA BASE
+Tablas: conectividad, lineas_recorridos, paradas_riesgo
+Huérfanos (debe ser 0): origen 0, destino 0, rutas sin línea 0
+Paradas: 43557. Con score de riesgo (dentro de CABA): 8571. Sin dato (fuera de la grilla): 34922. Score medio: 0.1713
+Tiempo por tramo (min): mínimo 0.03, promedio 1.24, máximo 29.97. Tramos > 30 min: 0
+
+COMPARACIÓN EN 46 PARES DE PUNTOS DENTRO DE CABA (franja Tarde, distancia 2-8 km)
+Pares evaluados: 46 de 50 (los demás no tuvieron recorrido)
+Exposición: mediana de reducción 0.0 % (IQR 0.0 a 0.0 %)
+Tiempo: mediana de aumento 0.0 % (IQR 0.0 a 0.5 %)
+Pares con reducción de exposición >= 10 %: 9 de 46
+Pares con mismo recorrido (sin cambio): 30 de 46
+Wilcoxon pareado (exposición segura < rápida): V = 141, p = 0.01248
+Transbordos medios: rápida 0.59, segura 0.61
+
+Nota: el sesgo solo actúa donde hay score de riesgo (dentro de CABA). Ver OBJETIVOS.md.

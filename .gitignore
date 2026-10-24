@@ -16,3 +16,6 @@ data/otp/
 
 # Credenciales: nunca en el repositorio (van en ~/.Renviron)
 .Renviron
+
+# GTFS crudos (grandes, se descargan de Buenos Aires Data)
+data/gtfs/
