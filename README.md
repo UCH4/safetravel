@@ -95,6 +95,20 @@ Rscript R/04_evaluacion_transporte.R
 
 Genera `data/evaluacion_transporte.csv` y `data/evaluacion_transporte_resumen.txt`.
 
+## Colectivo con riesgo en la app
+
+En la app, el medio "Colectivo (con riesgo)" muestra la frontera de Pareto entre tiempo y exposición al riesgo: una capa del mapa por opción, con sus tramos (línea, paradas, caminatas) en el panel. Elegir la franja horaria afecta los tiempos de espera. Los horarios son programados (GTFS de 2019), no tiempo real.
+
+El primer cálculo tarda unos segundos más porque el grafo se arma al iniciar la app.
+
+### Prueba de cobertura
+
+```bash
+Rscript R/05_prueba_parque_patricios.R
+```
+
+Geocodifica 20 direcciones del barrio y su entorno y prueba los 190 pares. El criterio es 100 % de pares con recorrido.
+
 ## Ruteo sesgado por riesgo en colectivos
 
 `calcular_colectivo_seguro(origen, destino, franja, factor_sesgo, k_alternativas)`, en `R/transporte.R`, busca el recorrido en colectivo (con caminatas de acceso y egreso) con un algoritmo de camino mínimo (Dijkstra, paquete `igraph`).
@@ -163,6 +177,7 @@ Todavía no está conectado a la app ni probado. Ver OBJETIVOS.md, sección 4.3.
 | `R/02_simulacion_resultados.R` | Simulación de 100 trayectos y prueba estadística. Pendiente de volver a correr. |
 | `R/03_base_transporte.R` | ETL del GTFS de colectivos: construye `data/transporte.sqlite` con tres tablas. |
 | `R/04_evaluacion_transporte.R` | Verifica la base y compara ruta rápida vs. sesgada en 50 pares de puntos. |
+| `R/05_prueba_parque_patricios.R` | Prueba de cobertura: 190 pares de direcciones alrededor de Parque Patricios. |
 | `R/transporte.R` | Grafo de colectivos, `calcular_colectivo_seguro()` y cliente de OpenTripPlanner. |
 | `data/` | Datos derivados incluidos y datos pesados ignorados por git. |
 

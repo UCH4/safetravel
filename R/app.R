@@ -11,11 +11,85 @@ source("00_config.R")
 source("01_preparar_riesgo.R")
 source("funciones_core.R")
 source("02_simulacion_resultados.R")  # provee construir_set_prueba_geocodificacion()
+source("transporte.R")                # colectivos con riesgo: frontera Pareto (modo "Colectivo")
 
 #' Formatea una duración en minutos: "46 min" o "1 h 12 min".
 formatear_duracion <- function(minutos) {
   m <- round(minutos)
   if (m < 60) sprintf("%d min", m) else sprintf("%d h %02d min", m %/% 60, m %% 60)
+}
+
+# Grafo de colectivos: se arma al iniciar la app (unos 20 s) para que el primer cálculo sea rápido.
+invisible(tryCatch(obtener_grafo_colectivos(), error = function(e) {
+  message("Colectivos no disponibles: ", conditionMessage(e))
+  NULL
+}))
+
+#' Colores de las opciones de colectivo en el mapa (una capa por opción).
+COLORES_OPCIONES <- c("#2ecc71", "#3388ff", "#e67e22", "#9b59b6", "#e74c3c", "#16a085", "#7f8c8d")
+
+#' Calcula la frontera de colectivo para dos textos de dirección.
+calcular_transporte_app <- function(texto_origen, texto_destino, franja) {
+  o <- geocodificar_direccion(texto_origen)
+  d <- geocodificar_direccion(texto_destino)
+  if (is.null(o)) stop("No se pudo ubicar el origen dentro de AMBA.")
+  if (is.null(d)) stop("No se pudo ubicar el destino dentro de AMBA.")
+  frontera <- frontera_pareto_transporte(list(lat = o$lat, lon = o$lon),
+                                         list(lat = d$lat, lon = d$lon), franja = franja)
+  list(tipo = "transporte", origen = o, destino = d, frontera = frontera, franja = franja)
+}
+
+#' Dibuja en el mapa las opciones de la frontera: una capa por opción.
+dibujar_transporte <- function(mapa, res) {
+  opciones <- res$frontera$opciones
+  for (i in seq_len(nrow(opciones))) {
+    pts <- res$frontera$rutas[[i]]$puntos
+    pts <- pts[!is.na(pts$lat), ]
+    color <- COLORES_OPCIONES[((i - 1) %% length(COLORES_OPCIONES)) + 1]
+    grupo <- sprintf("Opción %d", i)
+    etiqueta <- sprintf("%s: %s, exposición %.1f", grupo, formatear_duracion(opciones$duracion_min[i]),
+                        opciones$exposicion[i])
+    mapa <- leaflet::addPolylines(mapa, lng = pts$lon, lat = pts$lat, color = color, weight = 5,
+                                  opacity = 0.85, label = etiqueta, group = grupo)
+  }
+  grupos <- sprintf("Opción %d", seq_len(nrow(opciones)))
+  mapa |>
+    leaflet::addLayersControl(
+      overlayGroups = c("Riesgo", grupos),
+      options = leaflet::layersControlOptions(collapsed = FALSE)
+    )
+}
+
+#' Panel de resultados para el modo colectivo: una lista por opción, con sus tramos.
+tabla_transporte <- function(res) {
+  op <- res$frontera$opciones
+  bloques <- lapply(seq_len(nrow(op)), function(i) {
+    r <- res$frontera$rutas[[i]]
+    tramos <- r$tramos
+    filas_tramos <- lapply(seq_len(nrow(tramos)), function(k) {
+      t <- tramos[k, ]
+      texto <- if (t$tipo == "colectivo") {
+        sprintf("Línea %s: %s → %s (%d paradas, %s)", t$linea, t$desde, t$hasta, t$paradas,
+                formatear_duracion(t$minutos))
+      } else {
+        sprintf("%s: %s → %s (%s)", t$tipo, t$desde, t$hasta, formatear_duracion(t$minutos))
+      }
+      shiny::tags$li(texto)
+    })
+    shiny::tags$div(
+      shiny::tags$strong(sprintf("Opción %d", i)),
+      sprintf(": %s, %d transbordo(s), exposición %.1f, caminata %.0f min.",
+              formatear_duracion(op$duracion_min[i]), op$transbordos[i], op$exposicion[i], op$caminata_min[i]),
+      shiny::tags$ul(filas_tramos)
+    )
+  })
+  shiny::tagList(
+    shiny::h4("Opciones de colectivo"),
+    shiny::tags$p(shiny::em("Horarios programados (GTFS, fecha de referencia del feed). No son tiempo real.")),
+    shiny::tags$p(sprintf("Franja: %s. Las opciones son las no dominadas entre tiempo y exposición.",
+                          res$franja)),
+    bloques
+  )
 }
 
 # --- Carga de la grilla de riesgo (una sola vez, al iniciar la app) ---
@@ -54,8 +128,16 @@ ui <- shiny::fluidPage(
                           choices = c("Nada" = "no", "Origen" = "origen", "Destino" = "destino"),
                           selected = "no", inline = TRUE),
       shiny::radioButtons("modo", "Medio de transporte",
-                          choices = c("Auto" = "auto", "A pie" = "caminando"),
+                          choices = c("Auto" = "auto", "A pie" = "caminando",
+                                      "Colectivo (con riesgo)" = "transporte"),
                           selected = "auto", inline = TRUE),
+      shiny::conditionalPanel(
+        condition = "input.modo == 'transporte'",
+        shiny::selectInput("franja", "Franja horaria (horarios programados)",
+                           choices = c("Mañana (6 a 12)" = "Manana", "Tarde (12 a 20)" = "Tarde",
+                                       "Noche (20 a 6)" = "Noche"),
+                           selected = franja_actual())
+      ),
       shiny::actionButton("calcular", "Calcular ruta óptima", class = "btn-primary"),
       shiny::hr(),
       shiny::helpText("El sistema compara la ruta más rápida contra alternativas",
@@ -81,12 +163,17 @@ server <- function(input, output, session) {
 
     shiny::withProgress(message = "Calculando ruta óptima...", {
       tryCatch({
-        calcular_ruta_optima(
-          input$direccion_origen,
-          input$direccion_destino,
-          grilla_riesgo_global,
-          modo = input$modo
-        )
+        if (identical(input$modo, "transporte")) {
+          calcular_transporte_app(input$direccion_origen, input$direccion_destino,
+                                  franja = input$franja %||% franja_actual())
+        } else {
+          calcular_ruta_optima(
+            input$direccion_origen,
+            input$direccion_destino,
+            grilla_riesgo_global,
+            modo = input$modo
+          )
+        }
       }, error = function(e) {
         shiny::showNotification(paste("Error:", conditionMessage(e)), type = "error")
         NULL
@@ -114,6 +201,22 @@ server <- function(input, output, session) {
   shiny::observeEvent(resultado(), {
     res <- resultado()
     shiny::req(res)
+
+    if (identical(res$tipo, "transporte")) {
+      mapa <- leaflet::leafletProxy("mapa") |>
+        leaflet::clearShapes() |>
+        leaflet::clearMarkers() |>
+        leaflet::clearControls() |>
+        leaflet::addPolygons(
+          data = grilla_riesgo_geo,
+          fillColor = ~leaflet::colorNumeric("YlOrRd", riesgo)(riesgo),
+          fillOpacity = 0.35, stroke = FALSE, group = "Riesgo"
+        ) |>
+        leaflet::addMarkers(lng = res$origen$lon, lat = res$origen$lat, label = "Origen") |>
+        leaflet::addMarkers(lng = res$destino$lon, lat = res$destino$lat, label = "Destino")
+      dibujar_transporte(mapa, res)
+      return(invisible(NULL))
+    }
 
     mapa <- leaflet::leafletProxy("mapa") |>
       leaflet::clearShapes() |>
@@ -143,6 +246,8 @@ server <- function(input, output, session) {
   output$tabla_resultado <- shiny::renderUI({
     res <- resultado()
     shiny::req(res)
+
+    if (identical(res$tipo, "transporte")) return(tabla_transporte(res))
 
     m <- res$tabla_metricas[res$idx_optima, ]
     base <- res$tabla_metricas[1, ]

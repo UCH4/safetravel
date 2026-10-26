@@ -1,0 +1,191 @@
+"origen","destino","ok","causa","duracion_min","transbordos"
+"Av. Caseros 2800","Av. Caseros 3300",TRUE,"",10.8160168163684,0
+"Av. Caseros 2800","Av. Caseros 1500",TRUE,"",10.9740719161049,0
+"Av. Caseros 2800","Av. Sáenz 1000",TRUE,"",16.3434680333402,0
+"Av. Caseros 2800","Av. Sáenz 2000",TRUE,"",10.1903391747728,0
+"Av. Caseros 2800","Monteagudo 800",TRUE,"",13.6238041352492,0
+"Av. Caseros 2800","Cachimayo 1200",TRUE,"",23.1387722936102,0
+"Av. Caseros 2800","Iriarte 2400",TRUE,"",24.4637750064053,0
+"Av. Caseros 2800","Pasco 1200",TRUE,"",16.6226708247,0
+"Av. Caseros 2800","Av. Vélez Sarsfield 1100",TRUE,"",16.9250737490434,1
+"Av. Caseros 2800","Av. Jujuy 1000",TRUE,"",16.3978377613669,0
+"Av. Caseros 2800","Hipólito Yrigoyen 3000",TRUE,"",18.453225624753,0
+"Av. Caseros 2800","Av. Garay 1500",TRUE,"",15.0958231771254,0
+"Av. Caseros 2800","Av. Caseros y Av. Sáenz",TRUE,"",8.49463242924561,0
+"Av. Caseros 2800","Av. Caseros y Monteagudo",TRUE,"",4.21102717981251,0
+"Av. Caseros 2800","Av. Entre Ríos 800",TRUE,"",15.6090964937054,0
+"Av. Caseros 2800","Av. Independencia 1500",TRUE,"",50.0790622269016,1
+"Av. Caseros 2800","Av. Juan de Garay 900",TRUE,"",15.707700906853,0
+"Av. Caseros 2800","Av. Almirante Brown 1300",TRUE,"",91.9886072332724,2
+"Av. Caseros 2800","Av. Patricios 1700",TRUE,"",28.3481927544467,0
+"Av. Caseros 3300","Av. Caseros 1500",TRUE,"",13.8692406266973,0
+"Av. Caseros 3300","Av. Sáenz 1000",TRUE,"",13.6996762856936,0
+"Av. Caseros 3300","Av. Sáenz 2000",TRUE,"",13.0855078853652,0
+"Av. Caseros 3300","Monteagudo 800",TRUE,"",20.4385878332995,0
+"Av. Caseros 3300","Cachimayo 1200",TRUE,"",19.2249376851306,0
+"Av. Caseros 3300","Iriarte 2400",TRUE,"",27.5395158385844,1
+"Av. Caseros 3300","Pasco 1200",TRUE,"",22.4729066033433,0
+"Av. Caseros 3300","Av. Vélez Sarsfield 1100",TRUE,"",20.2685819090199,1
+"Av. Caseros 3300","Av. Jujuy 1000",TRUE,"",17.6942516760006,0
+"Av. Caseros 3300","Hipólito Yrigoyen 3000",TRUE,"",17.4592345957661,0
+"Av. Caseros 3300","Av. Garay 1500",TRUE,"",19.7071922615605,0
+"Av. Caseros 3300","Av. Caseros y Av. Sáenz",TRUE,"",6.35437945601716,0
+"Av. Caseros 3300","Av. Caseros y Monteagudo",TRUE,"",6.60683893420573,0
+"Av. Caseros 3300","Av. Entre Ríos 800",TRUE,"",20.3204655781405,0
+"Av. Caseros 3300","Av. Independencia 1500",TRUE,"",47.1729272894488,1
+"Av. Caseros 3300","Av. Juan de Garay 900",TRUE,"",18.6028696174454,0
+"Av. Caseros 3300","Av. Almirante Brown 1300",TRUE,"",89.0693934541241,2
+"Av. Caseros 3300","Av. Patricios 1700",TRUE,"",32.3620332914089,0
+"Av. Caseros 1500","Av. Sáenz 1000",TRUE,"",26.6091203153553,0
+"Av. Caseros 1500","Av. Sáenz 2000",TRUE,"",3.72635138057834,0
+"Av. Caseros 1500","Monteagudo 800",TRUE,"",20.2160667446701,0
+"Av. Caseros 1500","Cachimayo 1200",TRUE,"",33.1222828462928,0
+"Av. Caseros 1500","Iriarte 2400",TRUE,"",14.3076626558202,0
+"Av. Caseros 1500","Pasco 1200",TRUE,"",17.2619392308356,0
+"Av. Caseros 1500","Av. Vélez Sarsfield 1100",TRUE,"",13.6382701705591,0
+"Av. Caseros 1500","Av. Jujuy 1000",TRUE,"",21.4557269319826,1
+"Av. Caseros 1500","Hipólito Yrigoyen 3000",TRUE,"",28.1361459764755,0
+"Av. Caseros 1500","Av. Garay 1500",TRUE,"",8.34070775202825,0
+"Av. Caseros 1500","Av. Caseros y Av. Sáenz",TRUE,"",18.4781429819282,0
+"Av. Caseros 1500","Av. Caseros y Monteagudo",TRUE,"",16.5814200602018,0
+"Av. Caseros 1500","Av. Entre Ríos 800",TRUE,"",17.3766915965765,0
+"Av. Caseros 1500","Av. Independencia 1500",TRUE,"",42.5612529293001,0
+"Av. Caseros 1500","Av. Juan de Garay 900",TRUE,"",8.44956272196625,0
+"Av. Caseros 1500","Av. Almirante Brown 1300",TRUE,"",98.0256801839727,2
+"Av. Caseros 1500","Av. Patricios 1700",TRUE,"",21.2771547286218,0
+"Av. Sáenz 1000","Av. Sáenz 2000",TRUE,"",20.698659934194,0
+"Av. Sáenz 1000","Monteagudo 800",TRUE,"",13.8296668206822,0
+"Av. Sáenz 1000","Cachimayo 1200",TRUE,"",20.2970762695634,0
+"Av. Sáenz 1000","Iriarte 2400",TRUE,"",21.9443897816199,0
+"Av. Sáenz 1000","Pasco 1200",TRUE,"",28.2467254301226,0
+"Av. Sáenz 1000","Av. Vélez Sarsfield 1100",TRUE,"",24.7873952358781,0
+"Av. Sáenz 1000","Av. Jujuy 1000",TRUE,"",27.2852352544238,0
+"Av. Sáenz 1000","Hipólito Yrigoyen 3000",TRUE,"",24.519684695782,0
+"Av. Sáenz 1000","Av. Garay 1500",TRUE,"",25.4143444216732,0
+"Av. Sáenz 1000","Av. Caseros y Av. Sáenz",TRUE,"",10.1863962118213,0
+"Av. Sáenz 1000","Av. Caseros y Monteagudo",TRUE,"",13.8269607132756,0
+"Av. Sáenz 1000","Av. Entre Ríos 800",TRUE,"",26.1276177382532,0
+"Av. Sáenz 1000","Av. Independencia 1500",TRUE,"",47.3764329300395,0
+"Av. Sáenz 1000","Av. Juan de Garay 900",TRUE,"",26.2160216662742,0
+"Av. Sáenz 1000","Av. Almirante Brown 1300",TRUE,"",82.2864563327932,2
+"Av. Sáenz 1000","Av. Patricios 1700",TRUE,"",26.5421626622318,0
+"Av. Sáenz 2000","Monteagudo 800",TRUE,"",23.0954319511798,0
+"Av. Sáenz 2000","Cachimayo 1200",TRUE,"",31.4610417047042,0
+"Av. Sáenz 2000","Iriarte 2400",TRUE,"",16.3543936888008,0
+"Av. Sáenz 2000","Pasco 1200",TRUE,"",15.9207217176738,0
+"Av. Sáenz 2000","Av. Vélez Sarsfield 1100",TRUE,"",16.5396769279864,0
+"Av. Sáenz 2000","Av. Jujuy 1000",TRUE,"",19.8044619618091,0
+"Av. Sáenz 2000","Hipólito Yrigoyen 3000",TRUE,"",28.8558632232326,0
+"Av. Sáenz 2000","Av. Garay 1500",TRUE,"",7.7003432088041,0
+"Av. Sáenz 2000","Av. Caseros y Av. Sáenz",TRUE,"",16.8169018403396,0
+"Av. Sáenz 2000","Av. Caseros y Monteagudo",TRUE,"",14.052743894912,0
+"Av. Sáenz 2000","Av. Entre Ríos 800",TRUE,"",13.763532663267,0
+"Av. Sáenz 2000","Av. Independencia 1500",TRUE,"",45.8254178640015,0
+"Av. Sáenz 2000","Av. Juan de Garay 900",TRUE,"",10.8437134449302,0
+"Av. Sáenz 2000","Av. Almirante Brown 1300",TRUE,"",100.417423331511,2
+"Av. Sáenz 2000","Av. Patricios 1700",TRUE,"",22.6490544420032,0
+"Monteagudo 800","Cachimayo 1200",TRUE,"",33.4782128526027,1
+"Monteagudo 800","Iriarte 2400",TRUE,"",19.2531838251022,0
+"Monteagudo 800","Pasco 1200",TRUE,"",26.3166154967975,0
+"Monteagudo 800","Av. Vélez Sarsfield 1100",TRUE,"",19.9943881313,1
+"Monteagudo 800","Av. Jujuy 1000",TRUE,"",24.289468558278,0
+"Monteagudo 800","Hipólito Yrigoyen 3000",TRUE,"",27.9504162600185,1
+"Monteagudo 800","Av. Garay 1500",TRUE,"",25.1841354568289,0
+"Monteagudo 800","Av. Caseros y Av. Sáenz",TRUE,"",18.3525208197828,1
+"Monteagudo 800","Av. Caseros y Monteagudo",TRUE,"",13.9754192446051,0
+"Monteagudo 800","Av. Entre Ríos 800",TRUE,"",24.6166255034655,0
+"Monteagudo 800","Av. Independencia 1500",TRUE,"",53.9132405543859,1
+"Monteagudo 800","Av. Juan de Garay 900",TRUE,"",23.4124443697743,0
+"Monteagudo 800","Av. Almirante Brown 1300",TRUE,"",92.7868890972025,2
+"Monteagudo 800","Av. Patricios 1700",TRUE,"",23.8509567057142,0
+"Cachimayo 1200","Iriarte 2400",TRUE,"",42.9216904748315,1
+"Cachimayo 1200","Pasco 1200",TRUE,"",29.4194362761717,0
+"Cachimayo 1200","Av. Vélez Sarsfield 1100",TRUE,"",36.5010820618485,1
+"Cachimayo 1200","Av. Jujuy 1000",TRUE,"",28.9626141012937,1
+"Cachimayo 1200","Hipólito Yrigoyen 3000",TRUE,"",24.5084636977056,0
+"Cachimayo 1200","Av. Garay 1500",TRUE,"",30.5368711995555,0
+"Cachimayo 1200","Av. Caseros y Av. Sáenz",TRUE,"",18.0889230999445,0
+"Cachimayo 1200","Av. Caseros y Monteagudo",TRUE,"",21.9875404016673,0
+"Cachimayo 1200","Av. Entre Ríos 800",TRUE,"",33.9757775781641,1
+"Cachimayo 1200","Av. Independencia 1500",TRUE,"",44.4165072463138,0
+"Cachimayo 1200","Av. Juan de Garay 900",TRUE,"",34.8815254177485,0
+"Cachimayo 1200","Av. Almirante Brown 1300",TRUE,"",68.8650632750779,1
+"Cachimayo 1200","Av. Patricios 1700",TRUE,"",47.744207927656,0
+"Iriarte 2400","Pasco 1200",TRUE,"",26.5842429248252,1
+"Iriarte 2400","Av. Vélez Sarsfield 1100",TRUE,"",17.6602384769245,0
+"Iriarte 2400","Av. Jujuy 1000",TRUE,"",28.1866942743401,1
+"Iriarte 2400","Hipólito Yrigoyen 3000",TRUE,"",32.0331571356228,1
+"Iriarte 2400","Av. Garay 1500",TRUE,"",16.7664203763074,0
+"Iriarte 2400","Av. Caseros y Av. Sáenz",TRUE,"",27.8668186664093,1
+"Iriarte 2400","Av. Caseros y Monteagudo",TRUE,"",25.9700957446829,1
+"Iriarte 2400","Av. Entre Ríos 800",TRUE,"",30.2940524818057,1
+"Iriarte 2400","Av. Independencia 1500",TRUE,"",51.6003102483616,1
+"Iriarte 2400","Av. Juan de Garay 900",TRUE,"",14.4906024394101,0
+"Iriarte 2400","Av. Almirante Brown 1300",TRUE,"",104.467910869982,2
+"Iriarte 2400","Av. Patricios 1700",TRUE,"",9.51637478694503,0
+"Pasco 1200","Av. Vélez Sarsfield 1100",TRUE,"",16.3200067429343,0
+"Pasco 1200","Av. Jujuy 1000",TRUE,"",7.88870875623666,0
+"Pasco 1200","Hipólito Yrigoyen 3000",TRUE,"",16.1780227465812,0
+"Pasco 1200","Av. Garay 1500",TRUE,"",11.9274658745827,0
+"Pasco 1200","Av. Caseros y Av. Sáenz",TRUE,"",22.0850161244216,1
+"Pasco 1200","Av. Caseros y Monteagudo",TRUE,"",20.8591418495242,0
+"Pasco 1200","Av. Entre Ríos 800",TRUE,"",8.6796373727004,0
+"Pasco 1200","Av. Independencia 1500",TRUE,"",41.7064367652149,1
+"Pasco 1200","Av. Juan de Garay 900",TRUE,"",17.5516758940784,0
+"Pasco 1200","Av. Almirante Brown 1300",TRUE,"",75.4700820006797,1
+"Pasco 1200","Av. Patricios 1700",TRUE,"",28.8498254372417,1
+"Av. Vélez Sarsfield 1100","Av. Jujuy 1000",TRUE,"",23.7520599300643,1
+"Av. Vélez Sarsfield 1100","Hipólito Yrigoyen 3000",TRUE,"",28.9019942552318,1
+"Av. Vélez Sarsfield 1100","Av. Garay 1500",TRUE,"",15.376965911696,0
+"Av. Vélez Sarsfield 1100","Av. Caseros y Av. Sáenz",TRUE,"",21.9791999782321,1
+"Av. Vélez Sarsfield 1100","Av. Caseros y Monteagudo",TRUE,"",18.8324848324983,1
+"Av. Vélez Sarsfield 1100","Av. Entre Ríos 800",TRUE,"",15.6805410441095,0
+"Av. Vélez Sarsfield 1100","Av. Independencia 1500",TRUE,"",47.1564748470561,1
+"Av. Vélez Sarsfield 1100","Av. Juan de Garay 900",TRUE,"",22.1819395069106,0
+"Av. Vélez Sarsfield 1100","Av. Almirante Brown 1300",TRUE,"",103.430017132009,3
+"Av. Vélez Sarsfield 1100","Av. Patricios 1700",TRUE,"",18.4927135745364,0
+"Av. Jujuy 1000","Hipólito Yrigoyen 3000",TRUE,"",9.71018366249343,0
+"Av. Jujuy 1000","Av. Garay 1500",TRUE,"",14.3960526390538,0
+"Av. Jujuy 1000","Av. Caseros y Av. Sáenz",TRUE,"",19.6450868452916,0
+"Av. Jujuy 1000","Av. Caseros y Monteagudo",TRUE,"",14.6517048329757,0
+"Av. Jujuy 1000","Av. Entre Ríos 800",TRUE,"",12.6685147100932,0
+"Av. Jujuy 1000","Av. Independencia 1500",TRUE,"",35.3272504869766,2
+"Av. Jujuy 1000","Av. Juan de Garay 900",TRUE,"",19.7408214672374,0
+"Av. Jujuy 1000","Av. Almirante Brown 1300",TRUE,"",70.2302931117866,1
+"Av. Jujuy 1000","Av. Patricios 1700",TRUE,"",35.1482637828695,0
+"Hipólito Yrigoyen 3000","Av. Garay 1500",TRUE,"",20.284289926658,0
+"Hipólito Yrigoyen 3000","Av. Caseros y Av. Sáenz",TRUE,"",18.9787711165377,0
+"Hipólito Yrigoyen 3000","Av. Caseros y Monteagudo",TRUE,"",16.9052661460207,0
+"Hipólito Yrigoyen 3000","Av. Entre Ríos 800",TRUE,"",17.7274731407553,0
+"Hipólito Yrigoyen 3000","Av. Independencia 1500",TRUE,"",30.326062458658,1
+"Hipólito Yrigoyen 3000","Av. Juan de Garay 900",TRUE,"",25.6290587548416,0
+"Hipólito Yrigoyen 3000","Av. Almirante Brown 1300",TRUE,"",63.4232201466292,1
+"Hipólito Yrigoyen 3000","Av. Patricios 1700",TRUE,"",34.9372771757018,0
+"Av. Garay 1500","Av. Caseros y Av. Sáenz",TRUE,"",20.6906479816391,0
+"Av. Garay 1500","Av. Caseros y Monteagudo",TRUE,"",18.8281028292948,0
+"Av. Garay 1500","Av. Entre Ríos 800",TRUE,"",9.38604484512169,0
+"Av. Garay 1500","Av. Independencia 1500",TRUE,"",43.0283700797416,1
+"Av. Garay 1500","Av. Juan de Garay 900",TRUE,"",10.6927823795068,0
+"Av. Garay 1500","Av. Almirante Brown 1300",TRUE,"",100.898867618186,1
+"Av. Garay 1500","Av. Patricios 1700",TRUE,"",22.8981482132273,0
+"Av. Caseros y Av. Sáenz","Av. Caseros y Monteagudo",TRUE,"",7.44894609326151,0
+"Av. Caseros y Av. Sáenz","Av. Entre Ríos 800",TRUE,"",20.6742868163136,0
+"Av. Caseros y Av. Sáenz","Av. Independencia 1500",TRUE,"",45.6562183280957,1
+"Av. Caseros y Av. Sáenz","Av. Juan de Garay 900",TRUE,"",20.3684301994975,0
+"Av. Caseros y Av. Sáenz","Av. Almirante Brown 1300",TRUE,"",86.6621523880485,2
+"Av. Caseros y Av. Sáenz","Av. Patricios 1700",TRUE,"",32.7936088304358,0
+"Av. Caseros y Monteagudo","Av. Entre Ríos 800",TRUE,"",16.6482500312078,0
+"Av. Caseros y Monteagudo","Av. Independencia 1500",TRUE,"",42.8954692553177,2
+"Av. Caseros y Monteagudo","Av. Juan de Garay 900",TRUE,"",17.9053475573454,0
+"Av. Caseros y Monteagudo","Av. Almirante Brown 1300",TRUE,"",90.3618632320073,2
+"Av. Caseros y Monteagudo","Av. Patricios 1700",TRUE,"",30.1708975876397,0
+"Av. Entre Ríos 800","Av. Independencia 1500",TRUE,"",36.8370193497743,1
+"Av. Entre Ríos 800","Av. Juan de Garay 900",TRUE,"",20.8278544237273,0
+"Av. Entre Ríos 800","Av. Almirante Brown 1300",TRUE,"",71.2783099024826,1
+"Av. Entre Ríos 800","Av. Patricios 1700",TRUE,"",28.2616753364917,1
+"Av. Independencia 1500","Av. Juan de Garay 900",TRUE,"",43.9352258923446,0
+"Av. Independencia 1500","Av. Almirante Brown 1300",TRUE,"",77.3045419965881,4
+"Av. Independencia 1500","Av. Patricios 1700",TRUE,"",55.3478994101715,1
+"Av. Juan de Garay 900","Av. Almirante Brown 1300",TRUE,"",92.7582084870147,1
+"Av. Juan de Garay 900","Av. Patricios 1700",TRUE,"",17.3613280857402,0
+"Av. Almirante Brown 1300","Av. Patricios 1700",TRUE,"",105.807195965018,4

@@ -92,7 +92,8 @@ consultar_espera <- function(ruta, parada, franja = "Manana") {
 VELOCIDAD_CAMINATA_M_MIN <- 80        # ~4,8 km/h
 PENALIZACION_SUBIDA_MIN <- 3          # costo fijo por cada subida (transbordo incluido)
 DISTANCIA_TRANSBORDO_M <- 150         # caminata máxima entre dos paradas para transbordar
-RADIO_ACCESO_M <- 500                 # caminata máxima hasta la primera/última parada
+RADIO_ACCESO_M <- 500                 # caminata preferida hasta la primera/última parada
+RADIOS_ACCESO_M <- c(500, 800, 1200)  # radios sucesivos si no hay paradas dentro del primero
 VALOR_SIN_SERVICIO_MIN <- 1e6         # tramo sin servicio en la franja: peso enorme
 
 # Caché en memoria: la base se lee y el grafo se arma una sola vez por sesión.
@@ -227,12 +228,18 @@ calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NU
   g <- obtener_grafo_colectivos()
   paradas <- cargar_topologia()$paradas
 
+  # Acceso escalonado: si no hay paradas dentro de RADIO_ACCESO_M, se amplía el radio.
+  # La caminata extra queda cargada en el tiempo, así que la ruta lo penaliza.
   acceso <- function(pt) {
     d <- distancias_m(pt$lat, pt$lon, paradas$lat, paradas$lng)
-    cerca <- which(d <= RADIO_ACCESO_M)
-    if (length(cerca) == 0) stop("No hay paradas de colectivo a menos de ", RADIO_ACCESO_M, " m del punto.")
-    data.table(id_parada = paradas$id_parada[cerca], caminata = d[cerca] / VELOCIDAD_CAMINATA_M_MIN,
-               score = ifelse(is.na(paradas$score_riesgo[cerca]), 0, paradas$score_riesgo[cerca]))
+    for (radio in RADIOS_ACCESO_M) {
+      cerca <- which(d <= radio)
+      if (length(cerca) > 0) {
+        return(data.table(id_parada = paradas$id_parada[cerca], caminata = d[cerca] / VELOCIDAD_CAMINATA_M_MIN,
+                          score = ifelse(is.na(paradas$score_riesgo[cerca]), 0, paradas$score_riesgo[cerca])))
+      }
+    }
+    stop("No hay paradas de colectivo a menos de ", max(RADIOS_ACCESO_M), " m del punto.")
   }
   ac_o <- acceso(origen_coords)
   ac_d <- acceso(destino_coords)
@@ -260,7 +267,8 @@ calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NU
     firma <- paste(sort(ep), collapse = "-")
     if (!(firma %in% usados)) {
       usados <- c(usados, firma)
-      rutas <- c(rutas, list(resumir_ruta(g, ep, franja, factor_sesgo)))
+      rutas <- c(rutas, list(resumir_ruta(g, ep, franja, factor_sesgo,
+                                          coords_od = list(origen = origen_coords, destino = destino_coords))))
     }
     w_iter[ep] <- w_iter[ep] * 2   # penaliza el camino hallado para buscar otro distinto
   }
@@ -268,8 +276,74 @@ calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NU
   rutas
 }
 
+#' Frontera de Pareto entre tiempo y exposición al riesgo para un par de puntos.
+#'
+#' Corre `calcular_colectivo_seguro()` con varios factores de sesgo y junta todas las rutas
+#' obtenidas. Devuelve solo las no dominadas: una ruta se descarta si otra es igual o mejor
+#' en tiempo y en exposición, y estrictamente mejor en una de las dos.
+#'
+#' @param factores valores de factor_sesgo a barrer (0 = ruta más rápida)
+#' @return lista con `opciones` (data.frame ordenado por tiempo: id, duracion_min,
+#'   exposicion, transbordos, caminata_min, factor) y `rutas` (las rutas completas, mismo orden)
+frontera_pareto_transporte <- function(origen_coords, destino_coords, franja = NULL,
+                                       factores = c(0, 1, 2, 3, 5, 7, 10), k_alternativas = 2) {
+  if (is.null(franja)) franja <- franja_actual()
+  candidatas <- list(); meta <- list()
+  for (f in factores) {
+    rs <- calcular_colectivo_seguro(origen_coords, destino_coords, franja = franja,
+                                    factor_sesgo = f, k_alternativas = k_alternativas)
+    for (r in rs) {
+      candidatas[[length(candidatas) + 1]] <- r
+      meta[[length(meta) + 1]] <- data.frame(duracion_min = r$duracion_min, exposicion = r$exposicion,
+                                             transbordos = r$transbordos, caminata_min = r$caminata_min,
+                                             factor = f, stringsAsFactors = FALSE)
+    }
+  }
+  opciones <- do.call(rbind, meta)
+  # Dominancia: j domina a i si es <= en ambos criterios y < en al menos uno
+  n <- nrow(opciones)
+  dominada <- logical(n)
+  for (i in seq_len(n)) {
+    dominada[i] <- any(
+      opciones$duracion_min <= opciones$duracion_min[i] + 1e-9 &
+        opciones$exposicion <= opciones$exposicion[i] + 1e-9 &
+        (opciones$duracion_min < opciones$duracion_min[i] - 1e-9 |
+           opciones$exposicion < opciones$exposicion[i] - 1e-9)
+    )
+  }
+  # Quitar duplicados exactos (mismo tiempo y exposición) quedándose con el primero
+  clave <- paste(round(opciones$duracion_min, 6), round(opciones$exposicion, 6))
+  primero <- !duplicated(clave)
+  keep <- which(!dominada & primero)
+  keep <- keep[order(opciones$duracion_min[keep])]
+  opciones <- opciones[keep, , drop = FALSE]
+  opciones$id <- seq_len(nrow(opciones))
+  list(opciones = opciones[, c("id", "duracion_min", "exposicion", "transbordos", "caminata_min", "factor")],
+       rutas = candidatas[keep])
+}
+
+#' Coordenadas de cada paso del recorrido, para dibujarlo en el mapa.
+#' @return data.frame con lat, lon, nombre y tipo (tipo de la arista que llega al punto)
+puntos_ruta <- function(extremos, tipo, coords_od, topo) {
+  nodos <- c(extremos[1, 1], extremos[, 2])
+  tipo_llegada <- c(NA_character_, tipo)
+  id <- sub("^(P:|L:[^|]*\\|)", "", nodos)
+  ix <- match(id, topo$paradas$id_parada)
+  lat <- topo$paradas$lat[ix]
+  lon <- topo$paradas$lng[ix]
+  nombre <- topo$paradas$nombre[ix]
+  if (!is.null(coords_od)) {
+    es_origen <- id == "ORIG"; es_destino <- id == "DEST"
+    lat[es_origen] <- coords_od$origen$lat; lon[es_origen] <- coords_od$origen$lon
+    lat[es_destino] <- coords_od$destino$lat; lon[es_destino] <- coords_od$destino$lon
+    nombre[es_origen] <- "Origen"; nombre[es_destino] <- "Destino"
+  }
+  # Los estados (línea, parada) repiten la parada; se conserva solo el punto de la parada
+  data.frame(lat = lat, lon = lon, nombre = nombre, tipo = tipo_llegada, stringsAsFactors = FALSE)
+}
+
 #' Convierte un camino (secuencia de aristas) en un resumen legible.
-resumir_ruta <- function(g, ep, franja, factor_sesgo) {
+resumir_ruta <- function(g, ep, franja, factor_sesgo, coords_od = NULL) {
   tipo <- igraph::edge_attr(g, "tipo", ep)
   id_ruta <- igraph::edge_attr(g, "id_ruta", ep)
   tiempo <- igraph::edge_attr(g, "tiempo", ep)
@@ -282,7 +356,9 @@ resumir_ruta <- function(g, ep, franja, factor_sesgo) {
   parada_nombre <- function(nodo) {
     id <- parada_de(nodo)
     out <- unname(nombres[id])
-    ifelse(is.na(out), id, out)   # si el nombre no existe, se muestra el id
+    out <- ifelse(is.na(out), id, out)   # si el nombre no existe, se muestra el id
+    out[id == "ORIG"] <- "Origen"; out[id == "DEST"] <- "Destino"
+    out
   }
 
   es_subida <- tipo == "subida"
@@ -325,7 +401,8 @@ resumir_ruta <- function(g, ep, franja, factor_sesgo) {
     riesgo_medio = mean(sc[tipo %in% c("viaje", "subida")]),
     exposicion = sum(tiempo[tipo == "viaje"] * sc[tipo == "viaje"]),
     tramos = tramos,
-    paradas = unique(c(parada_nombre(extremos[1, 1]), parada_nombre(extremos[, 2])))
+    paradas = unique(c(parada_nombre(extremos[1, 1]), parada_nombre(extremos[, 2]))),
+    puntos = puntos_ruta(extremos, tipo, coords_od, topo)
   )
 }
 

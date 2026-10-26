@@ -74,31 +74,43 @@ generar_pares <- function(n = N_PARES, semilla = SEMILLA) {
 }
 
 #' Ruta única más rápida o sesgada (k = 1). NULL si no hay recorrido.
+#' El motivo del fallo se avisa en consola (no se oculta).
 ruta_unica <- function(par, factor) {
   tryCatch(
     calcular_colectivo_seguro(par$origen, par$destino, franja = FRANJA_EVAL,
                               factor_sesgo = factor, k_alternativas = 1)[[1]],
-    error = function(e) NULL
+    error = function(e) {
+      message("  sin recorrido (factor ", factor, "): ", conditionMessage(e))
+      NULL
+    }
   )
 }
 
-#' Ejecuta la comparación sobre todos los pares.
-comparar_rutas <- function(pares) {
-  filas <- lapply(seq_along(pares), function(k) {
-    p <- pares[[k]]
+#' Compara ruta rápida vs. sesgada hasta obtener N_PARES pares con recorrido.
+#' Si un par no tiene recorrido, se reemplaza por el siguiente generado (no se descarta sin más).
+comparar_rutas <- function(pares_candidatos, n_objetivo = N_PARES) {
+  filas <- list(); usados <- 0
+  for (p in pares_candidatos) {
+    if (length(filas) >= n_objetivo) break
+    usados <- usados + 1
     rapida <- ruta_unica(p, 0)
     segura <- ruta_unica(p, 1)
-    if (is.null(rapida) || is.null(segura)) return(NULL)
-    data.frame(
-      par = k, distancia_m = round(p$distancia_m),
+    if (is.null(rapida) || is.null(segura)) next
+    filas[[length(filas) + 1]] <- data.frame(
+      par = usados, distancia_m = round(p$distancia_m),
       tiempo_rapida_min = rapida$duracion_min, tiempo_segura_min = segura$duracion_min,
       exposicion_rapida = rapida$exposicion, exposicion_segura = segura$exposicion,
       riesgo_medio_rapida = rapida$riesgo_medio, riesgo_medio_segura = segura$riesgo_medio,
       transbordos_rapida = rapida$transbordos, transbordos_segura = segura$transbordos
     )
-  })
+  }
+  if (length(filas) < n_objetivo) {
+    warning("Solo ", length(filas), " de ", n_objetivo, " pares tuvieron recorrido.")
+  }
   res <- do.call(rbind, filas)
-  res$reduccion_exposicion_pct <- 100 * (res$exposicion_rapida - res$exposicion_segura) / res$exposicion_rapida
+  # Protección contra división por cero: exposición 0 en la ruta rápida no tiene reducción relativa
+  base_expo <- ifelse(res$exposicion_rapida > 0, res$exposicion_rapida, NA_real_)
+  res$reduccion_exposicion_pct <- 100 * (res$exposicion_rapida - res$exposicion_segura) / base_expo
   res$aumento_tiempo_pct <- 100 * (res$tiempo_segura_min - res$tiempo_rapida_min) / res$tiempo_rapida_min
   res
 }
@@ -135,7 +147,7 @@ resumir_evaluacion <- function(res, verificacion, n_pares) {
 if (sys.nframe() == 0) {
   verificacion <- verificar_base()
   message("Generando ", N_PARES, " pares y comparando rutas...")
-  pares <- generar_pares()
+  pares <- generar_pares(n = 2 * N_PARES)   # candidatos de reserva para reemplazar pares sin recorrido
   res <- comparar_rutas(pares)
   write.csv(res, RUTA_EVALUACION, row.names = FALSE)
   resumen <- resumir_evaluacion(res, verificacion, N_PARES)

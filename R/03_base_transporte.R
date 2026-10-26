@@ -147,7 +147,10 @@ etl_colectivos <- function(zip = RUTA_GTFS_COLECTIVOS, fecha = FECHA_REFERENCIA_
     nombre = cruce$stop_name,
     lat = cruce$stop_lat,
     lng = cruce$stop_lon,
-    score_riesgo = cruce$riesgo   # NA si la parada está fuera de la grilla (fuera de CABA)
+    # Percentil del riesgo de la parada dentro de la distribución de celdas de la grilla (0-1).
+    # Con normalización por máximo la mediana quedaba en ~0,08; el percentil reparte mejor el rango.
+    # NA si la parada está fuera de la grilla (fuera de CABA).
+    score_riesgo = ecdf(grilla$riesgo)(cruce$riesgo)
   )
 
   routes <- leer_gtfs_tabla(zip, "routes.txt",
