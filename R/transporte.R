@@ -297,7 +297,7 @@ calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NU
 #' @return lista con `opciones` (data.frame ordenado por tiempo: id, duracion_min,
 #'   exposicion, transbordos, caminata_min, factor) y `rutas` (las rutas completas, mismo orden)
 frontera_pareto_transporte <- function(origen_coords, destino_coords, franja = NULL,
-                                       factores = c(0, 1, 2, 3, 5, 7, 10), k_alternativas = 2) {
+                                       factores = c(0, 1, 2, 3, 5, 7, 10), k_alternativas = 3) {
   if (is.null(franja)) franja <- franja_actual()
   candidatas <- list(); meta <- list()
   for (f in factores) {
