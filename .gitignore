@@ -19,3 +19,4 @@ data/otp/
 
 # GTFS crudos (grandes, se descargan de Buenos Aires Data)
 data/gtfs/
+data/r5r/

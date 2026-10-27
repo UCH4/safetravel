@@ -1,0 +1,17 @@
+"fuente","opcion","lineas","duracion_min","transbordos","caminata_min","exposicion"
+"safetravel (GTFS 2019 + trazados RMBA 2023)",1,"91A",33,0,7,14.9
+"Google Maps (captura, misma búsqueda)",1,"28",30,0,NA,NA
+"Google Maps (captura, misma búsqueda)",2,"59 > 91",30,1,NA,NA
+"Google Maps (captura, misma búsqueda)",3,"2 > 150B/150A",37,1,NA,NA
+"Google Maps (captura, misma búsqueda)",4,"126 > 150B/150A",36,1,NA,NA
+"Google Maps (captura, misma búsqueda)",5,"9B/9A",36,0,NA,NA
+"Google Maps (captura, misma búsqueda)",6,"126 > 188",37,1,NA,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",1,"85",32,0,11,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",2,"84 > 1633",28,1,6,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",3,"211 > 1633",27,1,10,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",4,"210 > 1633",29,1,12,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",5,"1715 > 67",29,1,8,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",6,"285 > 1633",29,1,12,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",7,"284 > 1633",30,1,12,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",8,"320 > 4394 > 67",30,2,9,NA
+"r5r (OSM AMBA recortado + GTFS 2019-10-01)",9,"108 > 4394 > 67",29,2,8,NA
