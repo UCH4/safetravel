@@ -96,9 +96,11 @@ RADIO_ACCESO_M <- 500                 # caminata preferida hasta la primera/últ
 RADIOS_ACCESO_M <- c(500, 800, 1200)  # radios sucesivos si no hay paradas dentro del primero
 VALOR_SIN_SERVICIO_MIN <- 1e6         # tramo sin servicio en la franja: peso enorme
 
-#' Score de una parada sin dato (fuera de la grilla de CABA): la mediana de las paradas con dato.
-#' Un 0 la haría aparecer como la más segura; la mediana no la premia ni la castiga.
-score_neutro <- function(scores) stats::median(scores, na.rm = TRUE)
+#' Score de una parada sin dato (fuera de la grilla de CABA). Es la mediana de la distribución
+#' del score de la grilla (percentil), así que no premia ni castiga. Un 0 la haría aparecer
+#' como la más segura.
+SCORE_NEUTRO_FUERA_CABA <- 0.5
+score_neutro <- function(scores) SCORE_NEUTRO_FUERA_CABA
 
 # Caché en memoria: la base se lee y el grafo se arma una sola vez por sesión.
 .cache_transporte <- new.env(parent = emptyenv())
