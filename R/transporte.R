@@ -96,6 +96,10 @@ RADIO_ACCESO_M <- 500                 # caminata preferida hasta la primera/últ
 RADIOS_ACCESO_M <- c(500, 800, 1200)  # radios sucesivos si no hay paradas dentro del primero
 VALOR_SIN_SERVICIO_MIN <- 1e6         # tramo sin servicio en la franja: peso enorme
 
+#' Score de una parada sin dato (fuera de la grilla de CABA): la mediana de las paradas con dato.
+#' Un 0 la haría aparecer como la más segura; la mediana no la premia ni la castiga.
+score_neutro <- function(scores) stats::median(scores, na.rm = TRUE)
+
 # Caché en memoria: la base se lee y el grafo se arma una sola vez por sesión.
 .cache_transporte <- new.env(parent = emptyenv())
 
@@ -137,7 +141,8 @@ construir_grafo_colectivos <- function(topo = cargar_topologia(),
   if (!requireNamespace("igraph", quietly = TRUE)) stop("Falta el paquete igraph.")
   paradas <- topo$paradas
   con <- topo$conectividad
-  score_p <- setNames(ifelse(is.na(paradas$score_riesgo), 0, paradas$score_riesgo), paradas$id_parada)
+  neutro <- score_neutro(paradas$score_riesgo)
+  score_p <- setNames(ifelse(is.na(paradas$score_riesgo), neutro, paradas$score_riesgo), paradas$id_parada)
 
   # Estados (línea, parada): origen y destino de cada tramo
   est_origen <- con[, .(id_ruta, id_parada = id_parada_origen,
@@ -181,7 +186,7 @@ construir_grafo_colectivos <- function(topo = cargar_topologia(),
   # Score de la arista: promedio de las paradas que une (en el nodo "P:" o en la parada del estado)
   parada_de <- function(nodo) sub("^(P:|L:[^|]*\\|)", "", nodo)
   aristas[, score := (score_p[parada_de(from)] + score_p[parada_de(to)]) / 2]
-  aristas[is.na(score), score := 0]
+  aristas[is.na(score), score := neutro]
 
   vertices <- unique(c(aristas$from, aristas$to))
   g <- igraph::graph_from_data_frame(
@@ -227,16 +232,20 @@ calcular_colectivo_seguro <- function(origen_coords, destino_coords, franja = NU
   if (is.null(franja)) franja <- franja_actual()
   g <- obtener_grafo_colectivos()
   paradas <- cargar_topologia()$paradas
+  neutro <- score_neutro(paradas$score_riesgo)
+  # Solo paradas que son nodo del grafo: una parada sin tramos no tiene nodo y rompe add_edges.
+  en_grafo <- names(igraph::V(g))
 
   # Acceso escalonado: si no hay paradas dentro de RADIO_ACCESO_M, se amplía el radio.
   # La caminata extra queda cargada en el tiempo, así que la ruta lo penaliza.
   acceso <- function(pt) {
     d <- distancias_m(pt$lat, pt$lon, paradas$lat, paradas$lng)
+    d[!(paste0("P:", paradas$id_parada) %in% en_grafo)] <- Inf
     for (radio in RADIOS_ACCESO_M) {
       cerca <- which(d <= radio)
       if (length(cerca) > 0) {
         return(data.table(id_parada = paradas$id_parada[cerca], caminata = d[cerca] / VELOCIDAD_CAMINATA_M_MIN,
-                          score = ifelse(is.na(paradas$score_riesgo[cerca]), 0, paradas$score_riesgo[cerca])))
+                          score = ifelse(is.na(paradas$score_riesgo[cerca]), neutro, paradas$score_riesgo[cerca])))
       }
     }
     stop("No hay paradas de colectivo a menos de ", max(RADIOS_ACCESO_M), " m del punto.")

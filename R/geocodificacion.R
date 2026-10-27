@@ -228,14 +228,20 @@ geocodificar_direccion <- function(direccion) {
   texto <- trimws(direccion)
   if (is.na(texto) || texto == "") return(NULL)
 
-  # 1. Coordenadas directas
+  # 1. Coordenadas directas. Si son válidas pero caen fuera de AMBA, se corta con un mensaje claro.
   pt <- coordenadas_desde_texto(texto)
-  if (!is.null(pt)) return(c(pt, list(direccion = texto)))
+  if (!is.null(pt)) {
+    if (!dentro_amba(pt$lat, pt$lon)) stop("Las coordenadas están fuera de AMBA (CABA y alrededores).")
+    return(c(pt, list(direccion = texto)))
+  }
 
   # 2. Link de Google Maps: coordenadas o nombre del lugar
   if (grepl("google\\.|goo\\.gl|maps\\.app", texto)) {
     gm <- desde_link_google_maps(texto)
-    if (!is.null(gm$lat)) return(c(gm, list(direccion = texto)))
+    if (!is.null(gm$lat)) {
+      if (!dentro_amba(gm$lat, gm$lon)) stop("El link de Google Maps apunta a un punto fuera de AMBA (CABA y alrededores).")
+      return(c(gm, list(direccion = texto)))
+    }
     if (!is.null(gm$texto)) texto <- gm$texto
   }
 
