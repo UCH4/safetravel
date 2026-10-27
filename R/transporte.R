@@ -322,11 +322,78 @@ frontera_pareto_transporte <- function(origen_coords, destino_coords, franja = N
        rutas = candidatas[keep])
 }
 
+RUTA_TRAZADOS <- file.path(RUTA_DATOS, "trazados_colectivos.rds")
+
+#' Trazados reales de las líneas (RMBA), con caché. NULL si no está generado (R/06).
+cargar_trazados <- function(ruta = RUTA_TRAZADOS) {
+  if (!is.null(.cache_transporte$trazados)) return(.cache_transporte$trazados)
+  if (!file.exists(ruta)) return(NULL)
+  .cache_transporte$trazados <- readRDS(ruta)
+  .cache_transporte$trazados
+}
+
+#' Tramo del trazado real entre dos paradas de una línea (p. ej. "28A").
+#' Elige el trazado (ramal y sentido) que pasa más cerca de ambas paradas.
+#' @return data.frame con lat y lon, o NULL si no hay trazado cercano (se usan las paradas).
+trazado_entre <- function(linea, lat_ini, lon_ini, lat_fin, lon_fin, tolerancia_m = 400) {
+  tz <- cargar_trazados()
+  if (is.null(tz) || is.na(linea)) return(NULL)
+  numero <- sub("^([0-9]+).*$", "\\1", linea)
+  ramal <- sub("^[0-9]+", "", linea)
+  cands <- tz[[numero]]
+  if (is.null(cands)) return(NULL)
+  del_ramal <- Filter(function(t) identical(t$ramal, ramal), cands)
+  if (length(del_ramal) > 0) cands <- del_ramal
+  mejor <- NULL; mejor_d <- Inf
+  for (t in cands) {
+    i <- which.min(distancias_m(lat_ini, lon_ini, t$lat, t$lon))
+    j <- which.min(distancias_m(lat_fin, lon_fin, t$lat, t$lon))
+    d <- distancias_m(lat_ini, lon_ini, t$lat[i], t$lon[i]) +
+      distancias_m(lat_fin, lon_fin, t$lat[j], t$lon[j])
+    if (d < mejor_d) { mejor_d <- d; mejor <- list(t = t, i = i, j = j) }
+  }
+  if (is.null(mejor) || mejor_d > 2 * tolerancia_m) return(NULL)
+  idx <- seq(mejor$i, mejor$j)   # sirve en los dos sentidos
+  data.frame(lat = mejor$t$lat[idx], lon = mejor$t$lon[idx], stringsAsFactors = FALSE)
+}
+
+#' Reemplaza, en cada tramo de colectivo, las paradas intermedias por el trazado real.
+#' Los puntos de caminata y las paradas de subida y bajada no cambian.
+aplicar_trazados <- function(p) {
+  out <- p[1, , drop = FALSE]
+  k <- 2
+  while (k <= nrow(p)) {
+    if (isTRUE(p$modo[k] == "bus")) {
+      j <- k
+      while (j < nrow(p) && isTRUE(p$modo[j + 1] == "bus") && identical(p$linea[j + 1], p$linea[k])) j <- j + 1
+      tr <- trazado_entre(p$linea[k], p$lat[k - 1], p$lon[k - 1], p$lat[j], p$lon[j])
+      if (is.null(tr)) {
+        out <- rbind(out, p[k:j, ])
+      } else {
+        out <- rbind(out, data.frame(lat = tr$lat, lon = tr$lon, nombre = NA_character_, tipo = "viaje",
+                                     modo = "bus", linea = p$linea[k], stringsAsFactors = FALSE))
+      }
+      k <- j + 1
+    } else {
+      out <- rbind(out, p[k, ])
+      k <- k + 1
+    }
+  }
+  out
+}
+
 #' Coordenadas de cada paso del recorrido, para dibujarlo en el mapa.
-#' @return data.frame con lat, lon, nombre y tipo (tipo de la arista que llega al punto)
-puntos_ruta <- function(extremos, tipo, coords_od, topo) {
+#' @return data.frame con lat, lon, nombre, tipo (tipo de la arista que llega al punto),
+#'   modo ("bus" o "walk") y linea (nombre de la línea de colectivo, NA si camina).
+puntos_ruta <- function(extremos, tipo, coords_od, topo, id_ruta = NULL) {
   nodos <- c(extremos[1, 1], extremos[, 2])
   tipo_llegada <- c(NA_character_, tipo)
+  en_bus <- tipo %in% c("subida", "viaje", "bajada")
+  nombres_linea <- setNames(topo$lineas$nombre_linea, topo$lineas$id_ruta)
+  linea <- rep(NA_character_, length(tipo))
+  if (!is.null(id_ruta)) linea[en_bus] <- unname(nombres_linea[id_ruta[en_bus]])
+  modo_llegada <- c(NA_character_, ifelse(en_bus, "bus", "walk"))
+  linea_llegada <- c(NA_character_, linea)
   id <- sub("^(P:|L:[^|]*\\|)", "", nodos)
   ix <- match(id, topo$paradas$id_parada)
   lat <- topo$paradas$lat[ix]
@@ -339,7 +406,9 @@ puntos_ruta <- function(extremos, tipo, coords_od, topo) {
     nombre[es_origen] <- "Origen"; nombre[es_destino] <- "Destino"
   }
   # Los estados (línea, parada) repiten la parada; se conserva solo el punto de la parada
-  data.frame(lat = lat, lon = lon, nombre = nombre, tipo = tipo_llegada, stringsAsFactors = FALSE)
+  p <- data.frame(lat = lat, lon = lon, nombre = nombre, tipo = tipo_llegada, modo = modo_llegada,
+                  linea = linea_llegada, stringsAsFactors = FALSE)
+  aplicar_trazados(p)
 }
 
 #' Convierte un camino (secuencia de aristas) en un resumen legible.
@@ -351,6 +420,7 @@ resumir_ruta <- function(g, ep, franja, factor_sesgo, coords_od = NULL) {
   sc <- igraph::edge_attr(g, "score", ep)
   topo <- cargar_topologia()
   nombres <- setNames(topo$paradas$nombre, topo$paradas$id_parada)
+  nombres_linea <- setNames(topo$lineas$nombre_linea, topo$lineas$id_ruta)
   extremos <- igraph::ends(g, ep)
   parada_de <- function(nodo) sub("^(P:|L:[^|]*\\|)", "", nodo)
   parada_nombre <- function(nodo) {
@@ -369,12 +439,13 @@ resumir_ruta <- function(g, ep, franja, factor_sesgo, coords_od = NULL) {
   tramos <- list(); i <- 1
   while (i <= length(ep)) {
     if (tipo[i] == "subida") {
-      linea <- id_ruta[i]; desde <- parada_nombre(extremos[i, 1]); j <- i + 1; paradas_viaje <- 0; minutos <- tiempo[i]
-      while (j <= length(ep) && tipo[j] == "viaje" && id_ruta[j] == linea) {
+      linea_id <- id_ruta[i]; desde <- parada_nombre(extremos[i, 1]); j <- i + 1; paradas_viaje <- 0; minutos <- tiempo[i]
+      while (j <= length(ep) && tipo[j] == "viaje" && id_ruta[j] == linea_id) {
         paradas_viaje <- paradas_viaje + 1; minutos <- minutos + tiempo[j]; j <- j + 1
       }
       hasta <- parada_nombre(extremos[j - 1, 2])
-      tramos[[length(tramos) + 1]] <- data.frame(tipo = "colectivo", linea = linea, desde = desde, hasta = hasta,
+      tramos[[length(tramos) + 1]] <- data.frame(tipo = "colectivo", linea = unname(nombres_linea[linea_id]),
+                                                 desde = desde, hasta = hasta,
                                                  paradas = paradas_viaje, minutos = minutos,
                                                  riesgo_medio = mean(sc[i:(j - 1)]), stringsAsFactors = FALSE)
       i <- j
@@ -402,7 +473,7 @@ resumir_ruta <- function(g, ep, franja, factor_sesgo, coords_od = NULL) {
     exposicion = sum(tiempo[tipo == "viaje"] * sc[tipo == "viaje"]),
     tramos = tramos,
     paradas = unique(c(parada_nombre(extremos[1, 1]), parada_nombre(extremos[, 2]))),
-    puntos = puntos_ruta(extremos, tipo, coords_od, topo)
+    puntos = puntos_ruta(extremos, tipo, coords_od, topo, id_ruta)
   )
 }
 
