@@ -19,7 +19,7 @@ source(if (file.exists("transporte.R")) "transporte.R" else "R/transporte.R")
 
 RUTA_BENCH <- file.path(RUTA_DATOS, "benchmark_r5r.csv")
 DIR_R5R <- file.path(RUTA_DATOS, "r5r")
-N_PARES_BENCH <- 10
+N_PARES_BENCH <- 30
 SEMILLA_BENCH <- 2026
 FECHA_R5R <- as.POSIXct("2019-10-01 14:00:00", tz = "America/Argentina/Buenos_Aires")
 

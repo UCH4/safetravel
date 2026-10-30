@@ -23,7 +23,7 @@ source(if (file.exists("03_base_transporte.R")) "03_base_transporte.R" else "R/0
 
 RUTA_OSM_JSON <- file.path(RUTA_DATOS, "raw", "osm_bus_caba.json")
 RUTA_DB_OSM <- file.path(RUTA_DATOS, "transporte_osm.sqlite")
-VELOCIDAD_BUS_OSM_KMH <- 15
+VELOCIDAD_BUS_OSM_KMH <- 20
 INTERVALO_DEFAULT_MIN <- 20
 
 #' Coordenadas de un miembro de la relación: nodo directo o centroide del camino.
